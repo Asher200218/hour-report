@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hour Report 2026</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#ffffff; --ink:#1f2937; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#2563eb; --accent-soft:#eff6ff;
+    --total:#f1f5f9; --grand:#dbeafe; --weekend:#fafafa; --warn:#b91c1c;
+    --ok:#047857; --red:#FF000F; --red-dark:#c0000b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,"Helvetica Neue",Helvetica,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);font-size:13px}
+  header{background:var(--red);border-bottom:1px solid var(--red-dark);padding:16px 24px;
+    display:flex;align-items:center;gap:20px;flex-wrap:wrap;position:sticky;top:0;z-index:20;
+    box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  header h1{font-size:34px;margin:0;font-weight:900;letter-spacing:.5px;color:#fff;line-height:1}
+  header .badge{font-size:12px;font-weight:700;background:rgba(255,255,255,.22);
+    color:#fff;padding:4px 11px;border-radius:20px}
+  .controls{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-left:auto}
+  .field{display:flex;flex-direction:column;gap:3px}
+  .field label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+  header .field label{color:#fff}
+  select,button{font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);
+    border-radius:6px;background:#fff;color:var(--ink)}
+  select{min-width:150px;cursor:pointer}
+  button{cursor:pointer;font-weight:600}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.ghost{background:#fff}
+  button:hover{filter:brightness(.97)}
+  main{padding:18px 20px 60px}
+  .summary{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:150px}
+  .card .k{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+  .card .v{font-size:24px;font-weight:700;margin-top:2px}
+  .card .sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .card .v.warn{color:var(--warn)} .card .v.ok{color:var(--ok)}
+  .tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto;
+    width:100%;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  table{border-collapse:collapse;white-space:nowrap;width:100%;min-width:100%}
+  th,td{border:1px solid var(--line);padding:0;text-align:center;font-weight:400}
+  thead th{background:#f8fafc;font-weight:700;font-size:14px;padding:9px 8px;position:sticky;top:0;z-index:5}
+  thead tr.wk th{background:#eef2f7;font-size:15px}
+  .stickcol{position:sticky;left:0;background:var(--panel);z-index:6;text-align:left;
+    padding:0 14px;min-width:240px;font-weight:600;border-right:2px solid var(--line);font-size:15px}
+  thead .stickcol{z-index:8;background:#f8fafc}
+  td.daycell{padding:0}
+  td.daycell input{width:100%;min-width:54px;height:48px;border:none;text-align:center;font-size:17px;
+    background:transparent;color:var(--accent);font-weight:600}
+  td.daycell input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:#fff}
+  td.weekend{background:var(--weekend)}
+  td.wktot,th.wktot{background:var(--total);font-weight:700;min-width:58px;font-size:16px}
+  td.montot,th.montot{background:var(--grand);font-weight:700;min-width:68px;border-left:2px solid var(--line);font-size:16px}
+  tr.totrow td{background:var(--total);font-weight:700;height:46px;font-size:16px}
+  tr.totrow .stickcol{background:#eef2f7}
+  tr.exprow td{background:#fff;color:var(--muted);font-style:italic;height:40px;font-size:14px}
+  tr.exprow .stickcol{background:#fbfbfd}
+  .dom{font-size:18px;font-weight:700} .dow{font-size:12px;color:var(--muted)}
+  .sat .dow,.sun .dow{color:#9ca3af}
+  .leave{margin-top:18px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .leave h3{width:100%;margin:0 0 4px;font-size:13px}
+  .leave .field input{width:90px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;
+    font-size:13px;text-align:center;color:var(--accent);font-weight:600}
+  .hint{font-size:11px;color:var(--muted);margin:10px 2px 0}
+  .saved{font-size:12px;color:#fff;font-weight:700;opacity:0;transition:opacity .3s}
+  .saved.show{opacity:1}
+  @media print{
+    header .controls,.leave .field input{} button{display:none}
+    body{background:#fff}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hour Report</h1><span class="badge">Year 2026</span>
+  <div class="controls">
+    <div class="field"><label>Team</label><select id="teamSel"></select></div>
+    <div class="field"><label>Worker</label><select id="workerSel"></select></div>
+    <div class="field"><label>Month</label><select id="monthSel"></select></div>
+    <button class="ghost" id="saveJsonBtn">Save data</button>
+    <button class="ghost" id="loadJsonBtn">Load data</button>
+    <input type="file" id="loadJsonInput" accept="application/json,.json" hidden>
+    <button class="ghost" id="exportBtn">Export CSV</button>
+    <button class="ghost" id="printBtn">Print</button>
+    <span class="saved" id="savedMsg">Saved ✓</span>
+  </div>
+</header>
+
+<main>
+  <div class="summary" id="summary"></div>
+  <div class="tablewrap"><table id="grid"></table></div>
+  <div class="leave" id="leave"></div>
+  <p class="hint">Enter hours per task per day. Weekly totals, monthly totals and the worker daily totals
+  calculate automatically. Entries auto-save in your browser per worker &amp; month. Use <b>Save data</b> to
+  download a JSON backup of everything, and <b>Load data</b> to restore it on this or another computer.</p>
+</main>
+
+<script>
+const DATA = {"teams":[{"group":"ENG","team":"M2 TEAM","workers":[{"id":1,"name":"李尔东","role":"主管"},{"id":2,"name":"徐国伟","role":"设计"},{"id":3,"name":"王毛毛","role":"设计"},{"id":4,"name":"王洁","role":"设计"},{"id":5,"name":"王慧","role":"设计"},{"id":6,"name":"许美妮","role":"设计"},{"id":7,"name":"朱婷","role":"设计"},{"id":8,"name":"聂川童","role":"设计"},{"id":9,"name":"李栋","role":"设计"},{"id":10,"name":"李娜","role":"设计"},{"id":11,"name":"胡昇安","role":"校对"},{"id":12,"name":"姜东东","role":"校对"},{"id":13,"name":"吴斌","role":"校对"},{"id":14,"name":"胡建平","role":"校对"}]},{"group":"ENG","team":"M3 TEAM","workers":[{"id":15,"name":"武鑫","role":"主管"},{"id":16,"name":"栗晓晓","role":"设计"},{"id":17,"name":"韩安","role":"设计"},{"id":18,"name":"张强","role":"设计"},{"id":19,"name":"黄志强","role":"设计"},{"id":20,"name":"谢宇国","role":"设计"},{"id":21,"name":"杭文龙","role":"设计"},{"id":22,"name":"张宁","role":"设计"},{"id":23,"name":"孙红华","role":"校对"},{"id":24,"name":"杜艳","role":"校对"}]},{"group":"ENG","team":"IPU","workers":[{"id":25,"name":"郭壮","role":"主管"},{"id":26,"name":"盛文俊","role":"IPU支持"},{"id":27,"name":"魏祥明","role":"校对"},{"id":28,"name":"龙周杰","role":"IPU支持"},{"id":29,"name":"沈秋生","role":"系统工程师"}]},{"group":"ENG","team":"System","workers":[{"id":30,"name":"蒋玥婷","role":"数字化"}]}],"tasks":["订单设计","订单校对","订单沟通","IPU订单支持","Key user类支持","部门内部支持","跨部门支持","会议/培训","加班","休假"]};
+const TASK_EN = ["Order design","Order proofreading","Order communication","IPU order support","Key-user support","Internal dept. support","Cross-dept. support","Meeting / training","Overtime","Leave"];
+const LEAVE_CATS = ["Annual leave","Sick leave","Maternity/paternity/parental leave","Comp off","Overtime"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+const YEAR = 2026;
+
+// ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
+function weekIndexOf(date){
+  // number of Sundays strictly on/before this date since Jan 1; W0 = days before first Sunday
+  const jan1 = new Date(YEAR,0,1);
+  const firstSunOffset = (7 - jan1.getDay()) % 7;     // days from Jan1 to first Sunday
+  const firstSunday = new Date(YEAR,0,1+firstSunOffset);
+  if(date < firstSunday) return 0;
+  const diffDays = Math.floor((date - firstSunday)/86400000);
+  return 1 + Math.floor(diffDays/7);
+}
+function buildWeeks(monthIdx){
+  const days = new Date(YEAR, monthIdx+1, 0).getDate();
+  const weeks = {};
+  for(let d=1; d<=days; d++){
+    const dt = new Date(YEAR, monthIdx, d);
+    const wi = weekIndexOf(dt);
+    (weeks[wi] = weeks[wi] || []).push({dom:d, dow:dt.getDay()});
+  }
+  return Object.keys(weeks).map(Number).sort((a,b)=>a-b).map(wi=>{
+    const ds = weeks[wi];
+    const first=ds[0], last=ds[ds.length-1];
+    const mname = MONTHS[monthIdx].slice(0,3);
+    return {wi, label:`W${wi} (${mname} ${first.dom}–${last.dom})`, days:ds};
+  });
+}
+
+// ---- state ----
+let curWorkerId = 1, curMonth = 0, store = {};
+function storeKey(){return `hr_${YEAR}_${curMonth}_${curWorkerId}`;}
+function loadStore(){ try{store = JSON.parse(localStorage.getItem(storeKey())||'{}');}catch(e){store={};} store.h=store.h||{}; store.leave=store.leave||{}; }
+function saveStore(){ localStorage.setItem(storeKey(), JSON.stringify(store)); flashSaved(); }
+let savedTimer;
+function flashSaved(){const m=document.getElementById('savedMsg');m.classList.add('show');clearTimeout(savedTimer);savedTimer=setTimeout(()=>m.classList.remove('show'),1200);}
+function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
+function hv(task,dom){return store.h[`${task}_${dom}`];}
+function setHv(task,dom,val){const k=`${task}_${dom}`; if(val===''||val==null){delete store.h[k];}else{store.h[k]=val;}}
+
+// ---- selectors ----
+function fillSelectors(){
+  const teamSel=document.getElementById('teamSel'), wSel=document.getElementById('workerSel'), mSel=document.getElementById('monthSel');
+  teamSel.innerHTML = DATA.teams.map((t,i)=>`<option value="${i}">${t.group} / ${t.team}</option>`).join('');
+  mSel.innerHTML = MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
+  mSel.value = curMonth;
+  function fillWorkers(teamIdx){
+    wSel.innerHTML = DATA.teams[teamIdx].workers.map(w=>`<option value="${w.id}">${w.id}. ${w.name} (${w.role})</option>`).join('');
+  }
+  // find team of current worker
+  let ti=0; DATA.teams.forEach((t,i)=>{if(t.workers.some(w=>w.id===curWorkerId))ti=i;});
+  teamSel.value=ti; fillWorkers(ti); wSel.value=curWorkerId;
+  teamSel.onchange=()=>{fillWorkers(+teamSel.value); curWorkerId=+wSel.value; loadStore(); render();};
+  wSel.onchange=()=>{curWorkerId=+wSel.value; loadStore(); render();};
+  mSel.onchange=()=>{curMonth=+mSel.value; loadStore(); render();};
+}
+function curWorker(){for(const t of DATA.teams)for(const w of t.workers)if(w.id===curWorkerId)return w;}
+
+// ---- render grid ----
+function render(){
+  const weeks = buildWeeks(curMonth);
+  const tbl=document.getElementById('grid');
+  const tasks=DATA.tasks;
+
+  // header rows
+  let h1=`<thead><tr class="wk"><th class="stickcol" rowspan="2">Task</th>`;
+  weeks.forEach(w=>{ h1+=`<th colspan="${w.days.length+1}">${w.label}</th>`; });
+  h1+=`<th class="montot" rowspan="2">Month<br>Total</th></tr><tr>`;
+  weeks.forEach(w=>{
+    w.days.forEach(d=>{ const cls=d.dow===0?'sun':(d.dow===6?'sat':''); h1+=`<th class="${cls}"><div class="dom">${d.dom}</div><div class="dow">${DOW[d.dow]}</div></th>`; });
+    h1+=`<th class="wktot">Tol</th>`;
+  });
+  h1+=`</tr></thead>`;
+
+  // body task rows
+  let body='<tbody>';
+  tasks.forEach((tk,ti)=>{
+    const en=TASK_EN[ti];
+    body+=`<tr><td class="stickcol">${ti+1}. ${tk}<div style="font-size:10px;color:var(--muted);font-weight:400">${en}</div></td>`;
+    weeks.forEach(w=>{
+      w.days.forEach(d=>{
+        const cls=(d.dow===0||d.dow===6)?'daycell weekend':'daycell';
+        const v=hv(ti,d.dom); const val=v==null?'':v;
+        body+=`<td class="${cls}"><input data-task="${ti}" data-dom="${d.dom}" value="${val}" inputmode="decimal"></td>`;
+      });
+      body+=`<td class="wktot" data-wktot="${w.wi}" data-task="${ti}">0</td>`;
+    });
+    body+=`<td class="montot" data-montot-task="${ti}">0</td>`;
+  });
+  body+='</tr>';
+
+  // worker daily total row (sum across tasks)
+  body+=`<tr class="totrow"><td class="stickcol">Daily Total (all tasks)</td>`;
+  weeks.forEach(w=>{
+    w.days.forEach(d=>{ body+=`<td data-daytot="${d.dom}">0</td>`; });
+    body+=`<td class="wktot" data-weektot="${w.wi}">0</td>`;
+  });
+  body+=`<td class="montot" id="grandTot">0</td></tr>`;
+
+  // expected work hours row (weekdays x 8)
+  body+=`<tr class="exprow"><td class="stickcol">Expected work hours (wd×8)</td>`;
+  let expGrand=0;
+  weeks.forEach(w=>{
+    let wd=w.days.filter(d=>d.dow>=1&&d.dow<=5).length; let exp=wd*8; expGrand+=exp;
+    w.days.forEach(()=>{ body+=`<td></td>`; });
+    body+=`<td class="wktot">${exp}</td>`;
+  });
+  body+=`<td class="montot">${expGrand}</td></tr>`;
+  body+='</tbody>';
+
+  tbl.innerHTML=h1+body;
+
+  tbl.querySelectorAll('input[data-task]').forEach(inp=>{
+    inp.addEventListener('input',()=>{ setHv(+inp.dataset.task, +inp.dataset.dom, inp.value.trim()); recalc(weeks); saveStore(); });
+  });
+  buildLeave();
+  recalc(weeks);
+}
+
+function recalc(weeks){
+  const tasks=DATA.tasks;
+  const dayTot={}; const weekTot={}; let grand=0;
+  weeks.forEach(w=>{ weekTot[w.wi]=0; w.days.forEach(d=>dayTot[d.dom]=0); });
+
+  tasks.forEach((tk,ti)=>{
+    let monTask=0;
+    weeks.forEach(w=>{
+      let wt=0;
+      w.days.forEach(d=>{ const v=num(hv(ti,d.dom)); wt+=v; dayTot[d.dom]+=v; });
+      const cell=document.querySelector(`[data-wktot="${w.wi}"][data-task="${ti}"]`);
+      if(cell)cell.textContent=fmt(wt);
+      weekTot[w.wi]+=wt; monTask+=wt;
+    });
+    const mc=document.querySelector(`[data-montot-task="${ti}"]`); if(mc)mc.textContent=fmt(monTask);
+  });
+  weeks.forEach(w=>{ w.days.forEach(d=>{ const c=document.querySelector(`[data-daytot="${d.dom}"]`); if(c)c.textContent=fmt(dayTot[d.dom]); });
+    const wc=document.querySelector(`[data-weektot="${w.wi}"]`); if(wc)wc.textContent=fmt(weekTot[w.wi]); grand+=weekTot[w.wi]; });
+  const gt=document.getElementById('grandTot'); if(gt)gt.textContent=fmt(grand);
+  buildSummary(grand);
+}
+function fmt(n){return Number.isInteger(n)?n:(Math.round(n*100)/100);}
+
+function buildSummary(grand){
+  const w=curWorker();
+  // expected total = sum weekdays*8 across month
+  const weeks=buildWeeks(curMonth); let exp=0; weeks.forEach(wk=>exp+=wk.days.filter(d=>d.dow>=1&&d.dow<=5).length*8);
+  const diff=fmt(grand-exp);
+  const leaveSum=LEAVE_CATS.reduce((s,c)=>s+num(store.leave[c]),0);
+  const s=document.getElementById('summary');
+  s.innerHTML=`
+   <div class="card"><div class="k">Worker</div><div class="v" style="font-size:18px">${w.name}</div><div class="sub">#${w.id} · ${w.role}</div></div>
+   <div class="card"><div class="k">Month</div><div class="v" style="font-size:18px">${MONTHS[curMonth]} ${YEAR}</div><div class="sub">${weeks.length} weeks</div></div>
+   <div class="card"><div class="k">Logged Hours</div><div class="v">${fmt(grand)}</div><div class="sub">total entered</div></div>
+   <div class="card"><div class="k">Expected</div><div class="v">${exp}</div><div class="sub">weekdays × 8</div></div>
+   <div class="card"><div class="k">Difference</div><div class="v ${diff<0?'warn':'ok'}">${diff>0?'+':''}${diff}</div><div class="sub">logged − expected</div></div>
+   <div class="card"><div class="k">Leave / OT total</div><div class="v">${fmt(leaveSum)}</div><div class="sub">from accumulators</div></div>`;
+}
+
+function buildLeave(){
+  const el=document.getElementById('leave');
+  el.innerHTML=`<h3>Leave &amp; Overtime accumulators (monthly)</h3>`+
+    LEAVE_CATS.map(c=>`<div class="field"><label>${c}</label><input data-leave="${c}" value="${store.leave[c]??''}" inputmode="decimal"></div>`).join('');
+  el.querySelectorAll('input[data-leave]').forEach(inp=>{
+    inp.addEventListener('input',()=>{const v=inp.value.trim(); if(v==='')delete store.leave[inp.dataset.leave]; else store.leave[inp.dataset.leave]=v; saveStore(); buildSummary(currentGrand());});
+  });
+}
+function currentGrand(){let g=0;const tasks=DATA.tasks;const weeks=buildWeeks(curMonth);tasks.forEach((t,ti)=>weeks.forEach(w=>w.days.forEach(d=>g+=num(hv(ti,d.dom)))));return g;}
+
+// ---- export ----
+function exportCSV(){
+  const w=curWorker(); const weeks=buildWeeks(curMonth); const tasks=DATA.tasks;
+  let rows=[];
+  rows.push([`Hour Report ${YEAR}`, MONTHS[curMonth], `${w.id}. ${w.name} (${w.role})`]);
+  let hdr=['Task']; weeks.forEach(wk=>{wk.days.forEach(d=>hdr.push(`${d.dom}${DOW[d.dow]}`)); hdr.push(`W${wk.wi} Tol`);}); hdr.push('Month Total');
+  rows.push(hdr);
+  tasks.forEach((tk,ti)=>{
+    let r=[`${ti+1}. ${tk}`]; let mon=0;
+    weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{const v=num(hv(ti,d.dom));r.push(v);wt+=v;});r.push(wt);mon+=wt;});
+    r.push(mon); rows.push(r);
+  });
+  // daily totals
+  let dr=['Daily Total']; let grand=0;
+  weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{let s=0;tasks.forEach((t,ti)=>s+=num(hv(ti,d.dom)));dr.push(s);wt+=s;});dr.push(wt);grand+=wt;});
+  dr.push(grand); rows.push(dr);
+  rows.push([]);
+  rows.push(['Leave/Overtime accumulators']);
+  LEAVE_CATS.forEach(c=>rows.push([c, num(store.leave[c])]));
+  const csv=rows.map(r=>r.map(c=>{const s=String(c??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`HourReport_${YEAR}_${MONTHS[curMonth]}_${w.name}.csv`; a.click();
+}
+
+// ---- local JSON backup (all workers, all months) ----
+function saveJSON(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('hr_'))data[k]=localStorage.getItem(k);}
+  const payload={app:'HourReport',year:YEAR,exportedAt:new Date().toISOString(),entries:data};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`HourReport_${YEAR}_backup.json`; a.click();
+  flashSaved();
+}
+function loadJSON(file){
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const p=JSON.parse(r.result);
+      const entries=p&&p.entries?p.entries:p;
+      if(!entries||typeof entries!=='object')throw new Error('bad');
+      const keys=Object.keys(entries).filter(k=>k.startsWith('hr_'));
+      if(!keys.length)throw new Error('no entries');
+      if(!confirm(`Load ${keys.length} record(s) from this file? This overwrites matching worker/month data in this browser.`))return;
+      keys.forEach(k=>localStorage.setItem(k,typeof entries[k]==='string'?entries[k]:JSON.stringify(entries[k])));
+      loadStore(); render(); flashSaved();
+    }catch(e){alert('Could not read this file as an Hour Report backup.');}
+  };
+  r.readAsText(file);
+}
+// ---- init ----
+document.getElementById('saveJsonBtn').onclick=saveJSON;
+document.getElementById('loadJsonBtn').onclick=()=>document.getElementById('loadJsonInput').click();
+document.getElementById('loadJsonInput').onchange=e=>{if(e.target.files[0])loadJSON(e.target.files[0]);e.target.value='';};
+document.getElementById('exportBtn').onclick=exportCSV;
+document.getElementById('printBtn').onclick=()=>window.print();
+curMonth = new Date().getFullYear()===YEAR ? new Date().getMonth() : 0;
+fillSelectors(); loadStore(); render();
+</script>
+</body>
+</html>
