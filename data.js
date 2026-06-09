@@ -4,7 +4,44 @@ const TASK_EN = ["Order design","Order proofreading","Order communication","IPU 
 const LEAVE_CATS = ["Annual leave","Sick leave","Maternity/paternity/parental leave","Comp off","Overtime"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
-const YEAR = 2026;
+
+// ---- Multi-year support ----
+// curYear is the active year; all storage keys & cloud paths are scoped to it.
+let curYear = new Date().getFullYear();
+const YEARS_KEY = 'hr_years';
+function localYears(){
+  const set = new Set([new Date().getFullYear(), 2026, curYear]);
+  try{ (JSON.parse(localStorage.getItem(YEARS_KEY))||[]).forEach(y=>set.add(+y)); }catch(e){}
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); const m=k&&k.match(/^hr_(\d{4})_/); if(m)set.add(+m[1]); }
+  return [...set].filter(y=>y>=2000&&y<=2100);
+}
+function rememberYear(y){
+  y=+y; if(!y||y<2000||y>2100)return;
+  const ys=new Set(localYears()); ys.add(y);
+  localStorage.setItem(YEARS_KEY, JSON.stringify([...ys].sort((a,b)=>a-b)));
+}
+function allYears(extra){
+  const set=new Set(localYears()); (extra||[]).forEach(y=>set.add(+y)); set.add(curYear);
+  return [...set].filter(y=>y>=2000&&y<=2100).sort((a,b)=>a-b);
+}
+// Fill a <select> with known years (+ any cloud `extra`) and an "add new" sentinel.
+function fillYearSelect(sel, extra){
+  if(!sel)return;
+  sel.innerHTML = allYears(extra).map(y=>`<option value="${y}">${y}</option>`).join('')
+    + `<option value="__add__">➕ Add year…</option>`;
+  sel.value = String(curYear);
+}
+// Handle a year-select change. Returns true if curYear actually changed.
+function onYearSelect(sel){
+  if(sel.value==='__add__'){
+    const input=prompt('Enter a year to start tracking (e.g. '+(curYear+1)+'):', String(curYear+1));
+    const y=parseInt(input,10);
+    if(!y||y<2000||y>2100){ sel.value=String(curYear); return false; }
+    rememberYear(y); curYear=y; fillYearSelect(sel, []); return true;
+  }
+  const y=+sel.value; if(y===curYear){ return false; }
+  curYear=y; rememberYear(y); fillYearSelect(sel, []); return true;
+}
 
 // ---- Firebase cloud sync config ----
 const firebaseConfig = {

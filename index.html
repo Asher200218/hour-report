@@ -8,9 +8,10 @@
 </head>
 <body>
 <header>
-  <h1>Hour Report</h1><span class="badge">Year 2026</span><span class="badge" id="syncBadge" title="Cloud sync status">… connecting</span>
+  <h1>Hour Report</h1><span class="badge" id="syncBadge" title="Cloud sync status">… connecting</span>
   <a class="navlink" href="report.html">Task Totals →</a>
   <div class="controls">
+    <div class="field"><label>Year</label><select id="yearSel"></select></div>
     <div class="field"><label>Team</label><select id="teamSel"></select></div>
     <div class="field"><label>Worker</label><select id="workerSel"></select></div>
     <div class="field"><label>Month</label><select id="monthSel"></select></div>
@@ -34,23 +35,23 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=2"></script>
+<script src="data.js?v=3"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
   // number of Sundays strictly on/before this date since Jan 1; W0 = days before first Sunday
-  const jan1 = new Date(YEAR,0,1);
+  const jan1 = new Date(curYear,0,1);
   const firstSunOffset = (7 - jan1.getDay()) % 7;     // days from Jan1 to first Sunday
-  const firstSunday = new Date(YEAR,0,1+firstSunOffset);
+  const firstSunday = new Date(curYear,0,1+firstSunOffset);
   if(date < firstSunday) return 0;
   const diffDays = Math.floor((date - firstSunday)/86400000);
   return 1 + Math.floor(diffDays/7);
 }
 function buildWeeks(monthIdx){
-  const days = new Date(YEAR, monthIdx+1, 0).getDate();
+  const days = new Date(curYear, monthIdx+1, 0).getDate();
   const weeks = {};
   for(let d=1; d<=days; d++){
-    const dt = new Date(YEAR, monthIdx, d);
+    const dt = new Date(curYear, monthIdx, d);
     const wi = weekIndexOf(dt);
     (weeks[wi] = weeks[wi] || []).push({dom:d, dow:dt.getDay()});
   }
@@ -64,13 +65,13 @@ function buildWeeks(monthIdx){
 
 // ---- state ----
 let curWorkerId = 1, curMonth = 0, store = {};
-function storeKey(){return `hr_${YEAR}_${curMonth}_${curWorkerId}`;}
+function storeKey(){return `hr_${curYear}_${curMonth}_${curWorkerId}`;}
 function loadStore(){ try{store = JSON.parse(localStorage.getItem(storeKey())||'{}');}catch(e){store={};} store.h=store.h||{}; store.leave=store.leave||{}; }
 function saveStore(){ localStorage.setItem(storeKey(), JSON.stringify(store)); flashSaved(); pushRemote(); }
 
 // ---- Firebase cloud sync ----
 let db=null, curRef=null, applyingRemote=false, writeTimer=null;
-function fbPath(){return `reports/${YEAR}/${curMonth}/${curWorkerId}`;}
+function fbPath(){return `reports/${curYear}/${curMonth}/${curWorkerId}`;}
 function setSync(state){
   const b=document.getElementById('syncBadge'); if(!b)return;
   const m={online:['☁ Synced','#16a34a'],saving:['⤴ Saving…','#2563eb'],offline:['⚠ Local only','#b45309'],connecting:['… connecting','rgba(255,255,255,.5)']};
@@ -83,8 +84,10 @@ function initFirebase(){
     firebase.initializeApp(firebaseConfig);
     db=firebase.database();
     db.ref('.info/connected').on('value',s=>setSync(s.val()?'online':'offline'));
+    db.ref('years').on('value',s=>{ const v=s.val()||{}; fillYearSelect(document.getElementById('yearSel'), Object.keys(v).map(Number)); },()=>{});
   }catch(e){console.warn('Firebase init failed',e);setSync('offline');}
 }
+function registerYearRemote(y){ if(db) db.ref('years/'+y).set(true).catch(()=>{}); }
 function attachSync(){
   if(!db)return;
   if(curRef)curRef.off();
@@ -107,6 +110,7 @@ function pushRemote(){
   setSync('saving');
   clearTimeout(writeTimer);
   writeTimer=setTimeout(()=>{
+    registerYearRemote(curYear);
     db.ref(fbPath()).set({h:store.h||{},leave:store.leave||{}})
       .then(()=>setSync('online')).catch(e=>{console.warn('sync write',e);setSync('offline');});
   },400);
@@ -228,7 +232,7 @@ function buildSummary(grand){
   const s=document.getElementById('summary');
   s.innerHTML=`
    <div class="card"><div class="k">Worker</div><div class="v" style="font-size:18px">${w.name}</div><div class="sub">#${w.id} · ${w.role}</div></div>
-   <div class="card"><div class="k">Month</div><div class="v" style="font-size:18px">${MONTHS[curMonth]} ${YEAR}</div><div class="sub">${weeks.length} weeks</div></div>
+   <div class="card"><div class="k">Month</div><div class="v" style="font-size:18px">${MONTHS[curMonth]} ${curYear}</div><div class="sub">${weeks.length} weeks</div></div>
    <div class="card"><div class="k">Logged Hours</div><div class="v">${fmt(grand)}</div><div class="sub">total entered</div></div>
    <div class="card"><div class="k">Expected</div><div class="v">${exp}</div><div class="sub">weekdays × 8</div></div>
    <div class="card"><div class="k">Difference</div><div class="v ${diff<0?'warn':'ok'}">${diff>0?'+':''}${diff}</div><div class="sub">logged − expected</div></div>
@@ -249,7 +253,7 @@ function currentGrand(){let g=0;const tasks=DATA.tasks;const weeks=buildWeeks(cu
 function exportCSV(){
   const w=curWorker(); const weeks=buildWeeks(curMonth); const tasks=DATA.tasks;
   let rows=[];
-  rows.push([`Hour Report ${YEAR}`, MONTHS[curMonth], `${w.id}. ${w.name} (${w.role})`]);
+  rows.push([`Hour Report ${curYear}`, MONTHS[curMonth], `${w.id}. ${w.name} (${w.role})`]);
   let hdr=['Task']; weeks.forEach(wk=>{wk.days.forEach(d=>hdr.push(`${d.dom}${DOW[d.dow]}`)); hdr.push(`W${wk.wi} Tol`);}); hdr.push('Month Total');
   rows.push(hdr);
   tasks.forEach((tk,ti)=>{
@@ -267,17 +271,17 @@ function exportCSV(){
   const csv=rows.map(r=>r.map(c=>{const s=String(c??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\n');
   const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`HourReport_${YEAR}_${MONTHS[curMonth]}_${w.name}.csv`; a.click();
+  a.download=`HourReport_${curYear}_${MONTHS[curMonth]}_${w.name}.csv`; a.click();
 }
 
 // ---- local JSON backup (all workers, all months) ----
 function saveJSON(){
   const data={};
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('hr_'))data[k]=localStorage.getItem(k);}
-  const payload={app:'HourReport',year:YEAR,exportedAt:new Date().toISOString(),entries:data};
+  const payload={app:'HourReport',year:curYear,exportedAt:new Date().toISOString(),entries:data};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`HourReport_${YEAR}_backup.json`; a.click();
+  a.download=`HourReport_${curYear}_backup.json`; a.click();
   flashSaved();
 }
 function loadJSON(file){
@@ -302,7 +306,13 @@ document.getElementById('loadJsonBtn').onclick=()=>document.getElementById('load
 document.getElementById('loadJsonInput').onchange=e=>{if(e.target.files[0])loadJSON(e.target.files[0]);e.target.value='';};
 document.getElementById('exportBtn').onclick=exportCSV;
 document.getElementById('printBtn').onclick=()=>window.print();
-curMonth = new Date().getFullYear()===YEAR ? new Date().getMonth() : 0;
+curMonth = new Date().getFullYear()===curYear ? new Date().getMonth() : 0;
+const yearSel=document.getElementById('yearSel');
+fillYearSelect(yearSel);
+yearSel.onchange=function(){
+  if(onYearSelect(this)){ registerYearRemote(curYear); loadStore(); render(); attachSync(); }
+  else { this.value=String(curYear); }
+};
 fillSelectors(); loadStore(); render(); initFirebase(); attachSync();
 </script>
 </body>

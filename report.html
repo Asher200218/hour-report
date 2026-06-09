@@ -4,13 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report — Task Totals</title>
-<link rel="stylesheet" href="styles.css?v=2">
+<link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
 <header>
-  <h1>Task Totals</h1><span class="badge">Year 2026</span><span class="badge" id="srcBadge">…</span>
+  <h1>Task Totals</h1><span class="badge" id="srcBadge">…</span>
   <a class="navlink" href="index.html">← Hour Entry</a>
   <div class="controls">
+    <div class="field"><label>Year</label><select id="yearSel"></select></div>
     <div class="field"><label>Task</label><select id="taskSel"></select></div>
     <div class="field"><label>Month</label><select id="monthSel"></select></div>
     <button class="ghost" id="refreshBtn">Refresh</button>
@@ -30,7 +31,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=2"></script>
+<script src="data.js?v=3"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of t.workers)if(w.id===id)return {w,team:t};return null;}
@@ -42,7 +43,7 @@ let cloud = false;
 function readLocal(){
   const ds={};
   for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i); if(!k||!k.startsWith(`hr_${YEAR}_`))continue;
+    const k=localStorage.key(i); if(!k||!k.startsWith(`hr_${curYear}_`))continue;
     const parts=k.split('_'); const m=+parts[2], wid=+parts[3];
     if(isNaN(m)||isNaN(wid))continue;
     try{const v=JSON.parse(localStorage.getItem(k)); (ds[m]=ds[m]||{})[wid]={h:v.h||{},leave:v.leave||{}};}catch(e){}
@@ -56,7 +57,8 @@ function loadData(){
     try{
       if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       const db=firebase.database();
-      db.ref(`reports/${YEAR}`).once('value').then(snap=>{
+      db.ref('years').once('value').then(s=>fillYearSelect(document.getElementById('yearSel'), Object.keys(s.val()||{}).map(Number))).catch(()=>{});
+      db.ref(`reports/${curYear}`).once('value').then(snap=>{
         const val=snap.val()||{};
         const ds={};
         Object.keys(val).forEach(m=>{ const wk=val[m]||{};
@@ -91,6 +93,9 @@ function workerTotal(wid, taskIdx, scope){
 function fmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
 function buildSelectors(){
+  const ys=document.getElementById('yearSel');
+  fillYearSelect(ys);
+  ys.onchange=function(){ if(onYearSelect(this)){ loadData(); } else { this.value=String(curYear); } };
   const ts=document.getElementById('taskSel');
   ts.innerHTML=DATA.tasks.map((t,i)=>`<option value="${i}">${i+1}. ${t} — ${TASK_EN[i]}</option>`).join('');
   const ms=document.getElementById('monthSel');
@@ -125,7 +130,7 @@ function render(){
   const scopeLabel = scope==='all' ? 'All months' : MONTHS[+scope];
   document.getElementById('summary').innerHTML=`
     <div class="card"><div class="k">Task</div><div class="v" style="font-size:18px">${taskIdx+1}. ${DATA.tasks[taskIdx]}</div><div class="sub">${TASK_EN[taskIdx]}</div></div>
-    <div class="card"><div class="k">Total hours</div><div class="v ok">${fmt(grand)}</div><div class="sub">${scopeLabel} · ${YEAR}</div></div>
+    <div class="card"><div class="k">Total hours</div><div class="v ok">${fmt(grand)}</div><div class="sub">${scopeLabel} · ${curYear}</div></div>
     <div class="card"><div class="k">Workers with hours</div><div class="v">${contributors}</div><div class="sub">of ${DATA.teams.reduce((a,t)=>a+t.workers.length,0)} total</div></div>
     <div class="card"><div class="k">Top contributor</div><div class="v" style="font-size:18px">${top.name}</div><div class="sub">${fmt(top.v)} h</div></div>`;
 
@@ -149,7 +154,7 @@ function exportCSV(){
   const taskIdx=+document.getElementById('taskSel').value;
   const scope=document.getElementById('monthSel').value; const scopeKey=scope==='all'?'all':+scope;
   const scopeLabel=scope==='all'?'AllMonths':MONTHS[+scope];
-  let rows=[[`Task Totals ${YEAR}`,`${taskIdx+1}. ${DATA.tasks[taskIdx]} (${TASK_EN[taskIdx]})`,scopeLabel,cloud?'all devices':'this device only']];
+  let rows=[[`Task Totals ${curYear}`,`${taskIdx+1}. ${DATA.tasks[taskIdx]} (${TASK_EN[taskIdx]})`,scopeLabel,cloud?'all devices':'this device only']];
   rows.push(['Team','#','Worker','Role','Hours']);
   let grand=0;
   DATA.teams.forEach(team=>{ let sub=0;
@@ -160,7 +165,7 @@ function exportCSV(){
   const csv=rows.map(r=>r.map(c=>{const s=String(c??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\n');
   const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`TaskTotals_${YEAR}_${DATA.tasks[taskIdx]}_${scopeLabel}.csv`; a.click();
+  a.download=`TaskTotals_${curYear}_${DATA.tasks[taskIdx]}_${scopeLabel}.csv`; a.click();
 }
 
 buildSelectors();
