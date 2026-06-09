@@ -4,79 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report 2026</title>
-<style>
-  :root{
-    --bg:#f4f6f9; --panel:#ffffff; --ink:#1f2937; --muted:#6b7280;
-    --line:#e5e7eb; --accent:#2563eb; --accent-soft:#eff6ff;
-    --total:#f1f5f9; --grand:#dbeafe; --weekend:#fafafa; --warn:#b91c1c;
-    --ok:#047857; --red:#FF000F; --red-dark:#c0000b;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:Arial,"Helvetica Neue",Helvetica,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:var(--bg);color:var(--ink);font-size:13px}
-  header{background:var(--red);border-bottom:1px solid var(--red-dark);padding:16px 24px;
-    display:flex;align-items:center;gap:20px;flex-wrap:wrap;position:sticky;top:0;z-index:20;
-    box-shadow:0 2px 8px rgba(0,0,0,.12)}
-  header h1{font-size:34px;margin:0;font-weight:900;letter-spacing:.5px;color:#fff;line-height:1}
-  header .badge{font-size:12px;font-weight:700;background:rgba(255,255,255,.22);
-    color:#fff;padding:4px 11px;border-radius:20px}
-  .controls{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-left:auto}
-  .field{display:flex;flex-direction:column;gap:3px}
-  .field label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
-  header .field label{color:#fff}
-  select,button{font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);
-    border-radius:6px;background:#fff;color:var(--ink)}
-  select{min-width:150px;cursor:pointer}
-  button{cursor:pointer;font-weight:600}
-  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-  button.ghost{background:#fff}
-  button:hover{filter:brightness(.97)}
-  main{padding:18px 20px 60px}
-  .summary{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:150px}
-  .card .k{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
-  .card .v{font-size:24px;font-weight:700;margin-top:2px}
-  .card .sub{font-size:11px;color:var(--muted);margin-top:2px}
-  .card .v.warn{color:var(--warn)} .card .v.ok{color:var(--ok)}
-  .tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto;
-    width:100%;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-  table{border-collapse:collapse;white-space:nowrap;width:100%;min-width:100%}
-  th,td{border:1px solid var(--line);padding:0;text-align:center;font-weight:400}
-  thead th{background:#f8fafc;font-weight:700;font-size:14px;padding:9px 8px;position:sticky;top:0;z-index:5}
-  thead tr.wk th{background:#eef2f7;font-size:15px}
-  .stickcol{position:sticky;left:0;background:var(--panel);z-index:6;text-align:left;
-    padding:0 14px;min-width:240px;font-weight:600;border-right:2px solid var(--line);font-size:15px}
-  thead .stickcol{z-index:8;background:#f8fafc}
-  td.daycell{padding:0}
-  td.daycell input{width:100%;min-width:54px;height:48px;border:none;text-align:center;font-size:17px;
-    background:transparent;color:var(--accent);font-weight:600}
-  td.daycell input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:#fff}
-  td.weekend{background:var(--weekend)}
-  td.wktot,th.wktot{background:var(--total);font-weight:700;min-width:58px;font-size:16px}
-  td.montot,th.montot{background:var(--grand);font-weight:700;min-width:68px;border-left:2px solid var(--line);font-size:16px}
-  tr.totrow td{background:var(--total);font-weight:700;height:46px;font-size:16px}
-  tr.totrow .stickcol{background:#eef2f7}
-  tr.exprow td{background:#fff;color:var(--muted);font-style:italic;height:40px;font-size:14px}
-  tr.exprow .stickcol{background:#fbfbfd}
-  .dom{font-size:18px;font-weight:700} .dow{font-size:12px;color:var(--muted)}
-  .sat .dow,.sun .dow{color:#9ca3af}
-  .leave{margin-top:18px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;
-    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-  .leave h3{width:100%;margin:0 0 4px;font-size:13px}
-  .leave .field input{width:90px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;
-    font-size:13px;text-align:center;color:var(--accent);font-weight:600}
-  .hint{font-size:11px;color:var(--muted);margin:10px 2px 0}
-  .saved{font-size:12px;color:#fff;font-weight:700;opacity:0;transition:opacity .3s}
-  .saved.show{opacity:1}
-  @media print{
-    header .controls,.leave .field input{} button{display:none}
-    body{background:#fff}
-  }
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header>
-  <h1>Hour Report</h1><span class="badge">Year 2026</span>
+  <h1>Hour Report</h1><span class="badge">Year 2026</span><span class="badge" id="syncBadge" title="Cloud sync status">… connecting</span>
+  <a class="navlink" href="report.html">Task Totals →</a>
   <div class="controls">
     <div class="field"><label>Team</label><select id="teamSel"></select></div>
     <div class="field"><label>Worker</label><select id="workerSel"></select></div>
@@ -99,14 +32,10 @@
   download a JSON backup of everything, and <b>Load data</b> to restore it on this or another computer.</p>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="data.js"></script>
 <script>
-const DATA = {"teams":[{"group":"ENG","team":"M2 TEAM","workers":[{"id":1,"name":"李尔东","role":"主管"},{"id":2,"name":"徐国伟","role":"设计"},{"id":3,"name":"王毛毛","role":"设计"},{"id":4,"name":"王洁","role":"设计"},{"id":5,"name":"王慧","role":"设计"},{"id":6,"name":"许美妮","role":"设计"},{"id":7,"name":"朱婷","role":"设计"},{"id":8,"name":"聂川童","role":"设计"},{"id":9,"name":"李栋","role":"设计"},{"id":10,"name":"李娜","role":"设计"},{"id":11,"name":"胡昇安","role":"校对"},{"id":12,"name":"姜东东","role":"校对"},{"id":13,"name":"吴斌","role":"校对"},{"id":14,"name":"胡建平","role":"校对"}]},{"group":"ENG","team":"M3 TEAM","workers":[{"id":15,"name":"武鑫","role":"主管"},{"id":16,"name":"栗晓晓","role":"设计"},{"id":17,"name":"韩安","role":"设计"},{"id":18,"name":"张强","role":"设计"},{"id":19,"name":"黄志强","role":"设计"},{"id":20,"name":"谢宇国","role":"设计"},{"id":21,"name":"杭文龙","role":"设计"},{"id":22,"name":"张宁","role":"设计"},{"id":23,"name":"孙红华","role":"校对"},{"id":24,"name":"杜艳","role":"校对"}]},{"group":"ENG","team":"IPU","workers":[{"id":25,"name":"郭壮","role":"主管"},{"id":26,"name":"盛文俊","role":"IPU支持"},{"id":27,"name":"魏祥明","role":"校对"},{"id":28,"name":"龙周杰","role":"IPU支持"},{"id":29,"name":"沈秋生","role":"系统工程师"}]},{"group":"ENG","team":"System","workers":[{"id":30,"name":"蒋玥婷","role":"数字化"}]}],"tasks":["订单设计","订单校对","订单沟通","IPU订单支持","Key user类支持","部门内部支持","跨部门支持","会议/培训","加班","休假"]};
-const TASK_EN = ["Order design","Order proofreading","Order communication","IPU order support","Key-user support","Internal dept. support","Cross-dept. support","Meeting / training","Overtime","Leave"];
-const LEAVE_CATS = ["Annual leave","Sick leave","Maternity/paternity/parental leave","Comp off","Overtime"];
-const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
-const YEAR = 2026;
-
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
   // number of Sundays strictly on/before this date since Jan 1; W0 = days before first Sunday
@@ -137,7 +66,51 @@ function buildWeeks(monthIdx){
 let curWorkerId = 1, curMonth = 0, store = {};
 function storeKey(){return `hr_${YEAR}_${curMonth}_${curWorkerId}`;}
 function loadStore(){ try{store = JSON.parse(localStorage.getItem(storeKey())||'{}');}catch(e){store={};} store.h=store.h||{}; store.leave=store.leave||{}; }
-function saveStore(){ localStorage.setItem(storeKey(), JSON.stringify(store)); flashSaved(); }
+function saveStore(){ localStorage.setItem(storeKey(), JSON.stringify(store)); flashSaved(); pushRemote(); }
+
+// ---- Firebase cloud sync ----
+let db=null, curRef=null, applyingRemote=false, writeTimer=null;
+function fbPath(){return `reports/${YEAR}/${curMonth}/${curWorkerId}`;}
+function setSync(state){
+  const b=document.getElementById('syncBadge'); if(!b)return;
+  const m={online:['☁ Synced','#16a34a'],saving:['⤴ Saving…','#2563eb'],offline:['⚠ Local only','#b45309'],connecting:['… connecting','rgba(255,255,255,.5)']};
+  const [t,c]=m[state]||m.connecting; b.textContent=t; b.style.background=c;
+}
+function fbEnabled(){return db!==null;}
+function initFirebase(){
+  try{
+    if(!firebaseConfig||!firebaseConfig.apiKey||!firebaseConfig.databaseURL){setSync('offline');return;}
+    firebase.initializeApp(firebaseConfig);
+    db=firebase.database();
+    db.ref('.info/connected').on('value',s=>setSync(s.val()?'online':'offline'));
+  }catch(e){console.warn('Firebase init failed',e);setSync('offline');}
+}
+function attachSync(){
+  if(!db)return;
+  if(curRef)curRef.off();
+  curRef=db.ref(fbPath());
+  curRef.on('value',snap=>{
+    const val=snap.val(); if(!val)return;
+    const incoming={h:val.h||{},leave:val.leave||{}};
+    if(JSON.stringify(incoming)===JSON.stringify({h:store.h||{},leave:store.leave||{}}))return; // ignore echo
+    applyingRemote=true;
+    store.h=incoming.h; store.leave=incoming.leave;
+    localStorage.setItem(storeKey(),JSON.stringify(store));
+    const ae=document.activeElement;
+    const typing=ae&&ae.tagName==='INPUT'&&ae.closest('#grid,#leave');
+    if(!typing)render(); // don't yank focus while the user is typing
+    applyingRemote=false;
+  },err=>{console.warn('sync read error',err);setSync('offline');});
+}
+function pushRemote(){
+  if(!db||applyingRemote)return;
+  setSync('saving');
+  clearTimeout(writeTimer);
+  writeTimer=setTimeout(()=>{
+    db.ref(fbPath()).set({h:store.h||{},leave:store.leave||{}})
+      .then(()=>setSync('online')).catch(e=>{console.warn('sync write',e);setSync('offline');});
+  },400);
+}
 let savedTimer;
 function flashSaved(){const m=document.getElementById('savedMsg');m.classList.add('show');clearTimeout(savedTimer);savedTimer=setTimeout(()=>m.classList.remove('show'),1200);}
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
@@ -156,9 +129,9 @@ function fillSelectors(){
   // find team of current worker
   let ti=0; DATA.teams.forEach((t,i)=>{if(t.workers.some(w=>w.id===curWorkerId))ti=i;});
   teamSel.value=ti; fillWorkers(ti); wSel.value=curWorkerId;
-  teamSel.onchange=()=>{fillWorkers(+teamSel.value); curWorkerId=+wSel.value; loadStore(); render();};
-  wSel.onchange=()=>{curWorkerId=+wSel.value; loadStore(); render();};
-  mSel.onchange=()=>{curMonth=+mSel.value; loadStore(); render();};
+  teamSel.onchange=()=>{fillWorkers(+teamSel.value); curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
+  wSel.onchange=()=>{curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
+  mSel.onchange=()=>{curMonth=+mSel.value; loadStore(); render(); attachSync();};
 }
 function curWorker(){for(const t of DATA.teams)for(const w of t.workers)if(w.id===curWorkerId)return w;}
 
@@ -330,7 +303,7 @@ document.getElementById('loadJsonInput').onchange=e=>{if(e.target.files[0])loadJ
 document.getElementById('exportBtn').onclick=exportCSV;
 document.getElementById('printBtn').onclick=()=>window.print();
 curMonth = new Date().getFullYear()===YEAR ? new Date().getMonth() : 0;
-fillSelectors(); loadStore(); render();
+fillSelectors(); loadStore(); render(); initFirebase(); attachSync();
 </script>
 </body>
 </html>
