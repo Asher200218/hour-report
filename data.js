@@ -6,7 +6,13 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
 const YEAR = 2026;
 
-// ---- Firebase cloud sync config (filled in after project setup) ----
+// ---- Firebase cloud sync config ----
 const firebaseConfig = {
-  // FIREBASE_CONFIG_PLACEHOLDER
+  apiKey: "AIzaSyDBtCyw2zta-p5x035TXNo6q2Lf0j9kml4",
+  authDomain: "hour-report-7b67f.firebaseapp.com",
+  databaseURL: "https://hour-report-7b67f-default-rtdb.firebaseio.com",
+  projectId: "hour-report-7b67f",
+  storageBucket: "hour-report-7b67f.firebasestorage.app",
+  messagingSenderId: "202754768533",
+  appId: "1:202754768533:web:e1be7837c941d1c169259c"
 };
