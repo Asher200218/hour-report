@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report — Team Breakdown</title>
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 <header>
@@ -39,7 +39,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=3"></script>
+<script src="data.js?v=5"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 
@@ -65,14 +65,17 @@ function loadData(){
       if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       const db=firebase.database();
       db.ref('years').once('value').then(s=>fillYearSelect(document.getElementById('yearSel'), Object.keys(s.val()||{}).map(Number))).catch(()=>{});
-      db.ref(`reports/${curYear}`).once('value').then(snap=>{
-        const val=snap.val()||{};
-        const ds={};
-        Object.keys(val).forEach(m=>{ const wk=val[m]||{};
-          Object.keys(wk).forEach(wid=>{ const r=wk[wid]||{}; (ds[+m]=ds[+m]||{})[+wid]={h:r.h||{},leave:r.leave||{}}; });
-        });
-        dataset=ds; cloud=true; setSrc('cloud'); render();
-      }).catch(e=>{console.warn(e); dataset=readLocal(); cloud=false; setSrc('local'); render();});
+      fetchStructure(db, ()=>{
+        rebuildSelectors();
+        db.ref(`reports/${curYear}`).once('value').then(snap=>{
+          const val=snap.val()||{};
+          const ds={};
+          Object.keys(val).forEach(m=>{ const wk=val[m]||{};
+            Object.keys(wk).forEach(wid=>{ const r=wk[wid]||{}; (ds[+m]=ds[+m]||{})[+wid]={h:r.h||{},leave:r.leave||{}}; });
+          });
+          dataset=ds; cloud=true; setSrc('cloud'); render();
+        }).catch(e=>{console.warn(e); dataset=readLocal(); cloud=false; setSrc('local'); render();});
+      });
       return;
     }catch(e){console.warn(e);}
   }
@@ -100,6 +103,14 @@ function workerTaskTotal(wid, taskIdx, scope){
 function fmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
 function curTeam(){ return DATA.teams[+document.getElementById('teamSel').value]; }
+
+// Rebuild the team list after the structure (teams/tasks) may have changed, keeping selection.
+function rebuildSelectors(){
+  const ts=document.getElementById('teamSel'); const cur=ts.value;
+  ts.innerHTML=DATA.teams.map((t,i)=>`<option value="${i}">${t.group} / ${t.team}</option>`).join('');
+  if(cur!=='' && +cur<DATA.teams.length) ts.value=cur;
+  document.getElementById('taskCount').textContent=DATA.tasks.length;
+}
 
 function buildSelectors(){
   const ys=document.getElementById('yearSel');

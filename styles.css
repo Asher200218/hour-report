@@ -88,7 +88,13 @@ table.report th.rot{font-weight:700;text-align:center;min-width:34px}
 .sharecell .barwrap{flex:1;height:10px;background:#eef2f7;border-radius:5px;overflow:hidden}
 .sharecell .barwrap>i{display:block;height:100%;background:var(--accent)}
 .sharecell .pct{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:right}
+/* ---- list management bar ---- */
+.manage{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.manage .mlabel{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+.manage button{font-size:12px;padding:6px 12px}
+.manage .mhint{font-size:11px;color:var(--muted);margin-left:auto}
 @media print{
-  header .controls,.leave .field input{} button,.navlink{display:none}
+  header .controls,.leave .field input{} button,.navlink,.manage{display:none}
   body{background:#fff}
 }

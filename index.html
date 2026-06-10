@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report 2026</title>
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
 <header>
@@ -26,6 +26,13 @@
 </header>
 
 <main>
+  <div class="manage" id="manage">
+    <span class="mlabel">Manage lists:</span>
+    <button class="ghost" id="addWorkerBtn">+ Worker</button>
+    <button class="ghost" id="addTeamBtn">+ Team</button>
+    <button class="ghost" id="addTaskBtn">+ Task</button>
+    <span class="mhint">New entries sync to every device and to the Task Totals &amp; Team Breakdown pages.</span>
+  </div>
   <div class="summary" id="summary"></div>
   <div class="tablewrap"><table id="grid"></table></div>
   <div class="leave" id="leave"></div>
@@ -36,7 +43,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=3"></script>
+<script src="data.js?v=5"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -86,6 +93,7 @@ function initFirebase(){
     db=firebase.database();
     db.ref('.info/connected').on('value',s=>setSync(s.val()?'online':'offline'));
     db.ref('years').on('value',s=>{ const v=s.val()||{}; fillYearSelect(document.getElementById('yearSel'), Object.keys(v).map(Number)); },()=>{});
+    watchStructure(db, onStructureChanged);
   }catch(e){console.warn('Firebase init failed',e);setSync('offline');}
 }
 function registerYearRemote(y){ if(db) db.ref('years/'+y).set(true).catch(()=>{}); }
@@ -134,7 +142,7 @@ function fillSelectors(){
   // find team of current worker
   let ti=0; DATA.teams.forEach((t,i)=>{if(t.workers.some(w=>w.id===curWorkerId))ti=i;});
   teamSel.value=ti; fillWorkers(ti); wSel.value=curWorkerId;
-  teamSel.onchange=()=>{fillWorkers(+teamSel.value); curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
+  teamSel.onchange=()=>{fillWorkers(+teamSel.value); if(wSel.value)curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
   wSel.onchange=()=>{curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
   mSel.onchange=()=>{curMonth=+mSel.value; loadStore(); render(); attachSync();};
 }
@@ -142,6 +150,7 @@ function curWorker(){for(const t of DATA.teams)for(const w of t.workers)if(w.id=
 
 // ---- render grid ----
 function render(){
+  if(!curWorker()){ const t=DATA.teams.find(t=>t.workers&&t.workers.length); if(t) curWorkerId=t.workers[0].id; }
   const weeks = buildWeeks(curMonth);
   const tbl=document.getElementById('grid');
   const tasks=DATA.tasks;
@@ -230,6 +239,8 @@ function buildSummary(grand){
   const weeks=buildWeeks(curMonth); let exp=0; weeks.forEach(wk=>exp+=wk.days.filter(d=>d.dow>=1&&d.dow<=5).length*8);
   const diff=fmt(grand-exp);
   const leaveSum=LEAVE_CATS.reduce((s,c)=>s+num(store.leave[c]),0);
+  const otIdx=DATA.tasks.indexOf('加班');
+  let otSum=0; if(otIdx>=0){ weeks.forEach(wk=>wk.days.forEach(d=>otSum+=num(hv(otIdx,d.dom)))); }
   const s=document.getElementById('summary');
   s.innerHTML=`
    <div class="card"><div class="k">Worker</div><div class="v" style="font-size:18px">${w.name}</div><div class="sub">#${w.id} · ${w.role}</div></div>
@@ -237,12 +248,13 @@ function buildSummary(grand){
    <div class="card"><div class="k">Logged Hours</div><div class="v">${fmt(grand)}</div><div class="sub">total entered</div></div>
    <div class="card"><div class="k">Expected</div><div class="v">${exp}</div><div class="sub">weekdays × 8</div></div>
    <div class="card"><div class="k">Difference</div><div class="v ${diff<0?'warn':'ok'}">${diff>0?'+':''}${diff}</div><div class="sub">logged − expected</div></div>
-   <div class="card"><div class="k">Leave / OT total</div><div class="v">${fmt(leaveSum)}</div><div class="sub">from accumulators</div></div>`;
+   <div class="card"><div class="k">Leave total</div><div class="v">${fmt(leaveSum)}</div><div class="sub">from accumulators</div></div>
+   <div class="card"><div class="k">OT total</div><div class="v">${fmt(otSum)}</div><div class="sub">9. 加班 (grid)</div></div>`;
 }
 
 function buildLeave(){
   const el=document.getElementById('leave');
-  el.innerHTML=`<h3>Leave &amp; Overtime accumulators (monthly)</h3>`+
+  el.innerHTML=`<h3>Leave accumulators (monthly)</h3>`+
     LEAVE_CATS.map(c=>`<div class="field"><label>${c}</label><input data-leave="${c}" value="${store.leave[c]??''}" inputmode="decimal"></div>`).join('');
   el.querySelectorAll('input[data-leave]').forEach(inp=>{
     inp.addEventListener('input',()=>{const v=inp.value.trim(); if(v==='')delete store.leave[inp.dataset.leave]; else store.leave[inp.dataset.leave]=v; saveStore(); buildSummary(currentGrand());});
@@ -307,6 +319,39 @@ document.getElementById('loadJsonBtn').onclick=()=>document.getElementById('load
 document.getElementById('loadJsonInput').onchange=e=>{if(e.target.files[0])loadJSON(e.target.files[0]);e.target.value='';};
 document.getElementById('exportBtn').onclick=exportCSV;
 document.getElementById('printBtn').onclick=()=>window.print();
+
+// ---- list management (add worker / team / task) ----
+function persistStructure(){ saveStructureLocal(); pushStructure(db); }
+function onStructureChanged(){ fillSelectors(); render(); }
+document.getElementById('addTaskBtn').onclick=()=>{
+  const zh=prompt('New task name (Chinese label, e.g. 项目支持):'); if(zh===null)return;
+  if(!zh.trim()){alert('Task name is required.');return;}
+  const en=prompt('English description (optional):','')||'';
+  if(addTask(zh,en)){ persistStructure(); render(); }
+};
+document.getElementById('addTeamBtn').onclick=()=>{
+  const group=prompt('Group (e.g. ENG):','ENG'); if(group===null)return;
+  const team=prompt('Team name (e.g. M4 TEAM):'); if(team===null)return;
+  if(!group.trim()||!team.trim()){alert('Group and team name are required.');return;}
+  if(addTeam(group,team)){
+    persistStructure();
+    fillSelectors();
+    document.getElementById('teamSel').value=String(DATA.teams.length-1);
+    alert(`Added ${group.trim()} / ${team.trim()}. Now add its first worker.`);
+    document.getElementById('addWorkerBtn').click(); // a new team has no workers yet
+  }
+};
+document.getElementById('addWorkerBtn').onclick=()=>{
+  const ti=+document.getElementById('teamSel').value; const t=DATA.teams[ti]; if(!t)return;
+  const name=prompt(`Add a worker to ${t.group} / ${t.team}\n\nWorker name:`); if(name===null)return;
+  if(!name.trim()){alert('Worker name is required.');return;}
+  const role=prompt('Role (e.g. 设计 / 校对 / 主管):','设计')||'';
+  if(addWorker(ti,name,role)){
+    const ws=DATA.teams[ti].workers; curWorkerId=ws[ws.length-1].id;
+    persistStructure(); fillSelectors(); loadStore(); render(); attachSync();
+  }
+};
+
 curMonth = new Date().getFullYear()===curYear ? new Date().getMonth() : 0;
 const yearSel=document.getElementById('yearSel');
 fillYearSelect(yearSel);
