@@ -32,7 +32,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=5"></script>
+<script src="data.js?v=6"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of t.workers)if(w.id===id)return {w,team:t};return null;}
@@ -122,7 +122,7 @@ function render(){
   // per-worker totals
   const rows=[]; let grand=0, contributors=0, top={name:'—',v:0};
   DATA.teams.forEach(team=>{
-    const wr=team.workers.map(w=>{
+    const wr=(team.workers||[]).map(w=>{
       const v=workerTotal(w.id, taskIdx, scopeKey);
       if(v>0){contributors++; if(v>top.v)top={name:w.name,v};}
       grand+=v; return {w,v};
@@ -142,7 +142,7 @@ function render(){
   document.getElementById('summary').innerHTML=`
     <div class="card"><div class="k">Task</div><div class="v" style="font-size:18px">${taskIdx+1}. ${DATA.tasks[taskIdx]}</div><div class="sub">${TASK_EN[taskIdx]}</div></div>
     <div class="card"><div class="k">Total hours</div><div class="v ok">${fmt(grand)}</div><div class="sub">${scopeLabel} · ${curYear}</div></div>
-    <div class="card"><div class="k">Workers with hours</div><div class="v">${contributors}</div><div class="sub">of ${DATA.teams.reduce((a,t)=>a+t.workers.length,0)} total</div></div>
+    <div class="card"><div class="k">Workers with hours</div><div class="v">${contributors}</div><div class="sub">of ${DATA.teams.reduce((a,t)=>a+(t.workers||[]).length,0)} total</div></div>
     <div class="card"><div class="k">Top contributor</div><div class="v" style="font-size:18px">${top.name}</div><div class="sub">${fmt(top.v)} h</div></div>`;
 
   // table
@@ -169,7 +169,7 @@ function exportCSV(){
   rows.push(['Team','#','Worker','Role','Hours']);
   let grand=0;
   DATA.teams.forEach(team=>{ let sub=0;
-    team.workers.forEach(w=>{const v=workerTotal(w.id,taskIdx,scopeKey);sub+=v;grand+=v;rows.push([team.team,w.id,w.name,w.role,v]);});
+    (team.workers||[]).forEach(w=>{const v=workerTotal(w.id,taskIdx,scopeKey);sub+=v;grand+=v;rows.push([team.team,w.id,w.name,w.role,v]);});
     rows.push([team.team+' subtotal','','','',sub]);
   });
   rows.push(['All teams total','','','',grand]);

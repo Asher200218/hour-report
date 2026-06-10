@@ -39,7 +39,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=5"></script>
+<script src="data.js?v=6"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 
@@ -132,7 +132,7 @@ function compute(){
   const tasks=DATA.tasks;
   const taskTotals=tasks.map(()=>0);
   let grand=0;
-  const rows=team.workers.map(w=>{
+  const rows=(team.workers||[]).map(w=>{
     const cells=tasks.map((_,ti)=>{ const v=workerTaskTotal(w.id, ti, scopeKey); taskTotals[ti]+=v; return v; });
     const tot=cells.reduce((a,b)=>a+b,0); grand+=tot;
     return {w, cells, tot};
@@ -156,7 +156,7 @@ function render(){
   document.getElementById('summary').innerHTML=`
     <div class="card"><div class="k">Team</div><div class="v" style="font-size:18px">${team.team}</div><div class="sub">${team.group}</div></div>
     <div class="card"><div class="k">Total hours</div><div class="v ok">${fmt(grand)}</div><div class="sub">${scopeLabel} · ${curYear}</div></div>
-    <div class="card"><div class="k">Members with hours</div><div class="v">${membersWithHours}</div><div class="sub">of ${team.workers.length} in team</div></div>
+    <div class="card"><div class="k">Members with hours</div><div class="v">${membersWithHours}</div><div class="sub">of ${(team.workers||[]).length} in team</div></div>
     <div class="card"><div class="k">Top task</div><div class="v" style="font-size:16px">${topTask.i<0?'—':(topTask.i+1)+'. '+tasks[topTask.i]}</div><div class="sub">${fmt(topTask.v)} h</div></div>
     <div class="card"><div class="k">Top contributor</div><div class="v" style="font-size:18px">${topMember.name}</div><div class="sub">${fmt(topMember.v)} h</div></div>`;
 

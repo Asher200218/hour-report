@@ -62,7 +62,7 @@ const STRUCT_KEY = 'hr_structure';
 function structSnapshot(){ return { teams: JSON.parse(JSON.stringify(DATA.teams)), tasks: [...DATA.tasks], tasksEn: [...TASK_EN] }; }
 function applyStructure(s){
   if(!s || typeof s!=='object') return false;
-  if(Array.isArray(s.teams))   DATA.teams = s.teams;
+  if(Array.isArray(s.teams))   DATA.teams = s.teams.map(t => ({...t, workers: Array.isArray(t.workers) ? t.workers : t.workers ? Object.values(t.workers) : []}));
   if(Array.isArray(s.tasks))   DATA.tasks = s.tasks;
   if(Array.isArray(s.tasksEn)) TASK_EN    = s.tasksEn;
   return true;
