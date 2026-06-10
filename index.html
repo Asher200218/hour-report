@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report 2026</title>
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
 <header>
@@ -31,7 +31,10 @@
     <button class="ghost" id="addWorkerBtn">+ Worker</button>
     <button class="ghost" id="addTeamBtn">+ Team</button>
     <button class="ghost" id="addTaskBtn">+ Task</button>
-    <span class="mhint">New entries sync to every device and to the Task Totals &amp; Team Breakdown pages.</span>
+    <button class="ghost danger" id="delWorkerBtn">− Worker</button>
+    <button class="ghost danger" id="delTeamBtn">− Team</button>
+    <button class="ghost danger" id="delTaskBtn">− Task</button>
+    <span class="mhint">Changes sync to every device and to the Task Totals &amp; Team Breakdown pages.</span>
   </div>
   <div class="summary" id="summary"></div>
   <div class="tablewrap"><table id="grid"></table></div>
@@ -43,7 +46,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=6"></script>
+<script src="data.js?v=7"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -137,16 +140,16 @@ function fillSelectors(){
   mSel.innerHTML = MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
   mSel.value = curMonth;
   function fillWorkers(teamIdx){
-    wSel.innerHTML = DATA.teams[teamIdx].workers.map(w=>`<option value="${w.id}">${w.id}. ${w.name} (${w.role})</option>`).join('');
+    wSel.innerHTML = (DATA.teams[teamIdx].workers||[]).map(w=>`<option value="${w.id}">${w.id}. ${w.name} (${w.role})</option>`).join('');
   }
   // find team of current worker
-  let ti=0; DATA.teams.forEach((t,i)=>{if(t.workers.some(w=>w.id===curWorkerId))ti=i;});
+  let ti=0; DATA.teams.forEach((t,i)=>{if((t.workers||[]).some(w=>w.id===curWorkerId))ti=i;});
   teamSel.value=ti; fillWorkers(ti); wSel.value=curWorkerId;
   teamSel.onchange=()=>{fillWorkers(+teamSel.value); if(wSel.value)curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
   wSel.onchange=()=>{curWorkerId=+wSel.value; loadStore(); render(); attachSync();};
   mSel.onchange=()=>{curMonth=+mSel.value; loadStore(); render(); attachSync();};
 }
-function curWorker(){for(const t of DATA.teams)for(const w of t.workers)if(w.id===curWorkerId)return w;}
+function curWorker(){for(const t of DATA.teams)for(const w of (t.workers||[]))if(w.id===curWorkerId)return w;}
 
 // ---- render grid ----
 function render(){
@@ -235,6 +238,7 @@ function fmt(n){return Number.isInteger(n)?n:(Math.round(n*100)/100);}
 
 function buildSummary(grand){
   const w=curWorker();
+  if(!w){ document.getElementById('summary').innerHTML=`<div class="card"><div class="k">Worker</div><div class="v" style="font-size:18px">—</div><div class="sub">no workers — add one above</div></div>`; return; }
   // expected total = sum weekdays*8 across month
   const weeks=buildWeeks(curMonth); let exp=0; weeks.forEach(wk=>exp+=wk.days.filter(d=>d.dow>=1&&d.dow<=5).length*8);
   const diff=fmt(grand-exp);
@@ -249,7 +253,7 @@ function buildSummary(grand){
    <div class="card"><div class="k">Expected</div><div class="v">${exp}</div><div class="sub">weekdays × 8</div></div>
    <div class="card"><div class="k">Difference</div><div class="v ${diff<0?'warn':'ok'}">${diff>0?'+':''}${diff}</div><div class="sub">logged − expected</div></div>
    <div class="card"><div class="k">Leave total</div><div class="v">${fmt(leaveSum)}</div><div class="sub">from accumulators</div></div>
-   <div class="card"><div class="k">OT total</div><div class="v">${fmt(otSum)}</div><div class="sub">9. 加班 (grid)</div></div>`;
+   <div class="card"><div class="k">OT total</div><div class="v">${fmt(otSum)}</div><div class="sub">${otIdx>=0?`${otIdx+1}. 加班 (grid)`:'no 加班 task'}</div></div>`;
 }
 
 function buildLeave(){
@@ -264,7 +268,8 @@ function currentGrand(){let g=0;const tasks=DATA.tasks;const weeks=buildWeeks(cu
 
 // ---- export ----
 function exportCSV(){
-  const w=curWorker(); const weeks=buildWeeks(curMonth); const tasks=DATA.tasks;
+  const w=curWorker(); if(!w){alert('No worker selected.');return;}
+  const weeks=buildWeeks(curMonth); const tasks=DATA.tasks;
   let rows=[];
   rows.push([`Hour Report ${curYear}`, MONTHS[curMonth], `${w.id}. ${w.name} (${w.role})`]);
   let hdr=['Task']; weeks.forEach(wk=>{wk.days.forEach(d=>hdr.push(`${d.dom}${DOW[d.dow]}`)); hdr.push(`W${wk.wi} Tol`);}); hdr.push('Month Total');
@@ -350,6 +355,53 @@ document.getElementById('addWorkerBtn').onclick=()=>{
     const ws=DATA.teams[ti].workers; curWorkerId=ws[ws.length-1].id;
     persistStructure(); fillSelectors(); loadStore(); render(); attachSync();
   }
+};
+
+// ---- list management (delete worker / team / task) ----
+function pickValidWorker(){
+  if(curWorker())return;
+  const t=DATA.teams.find(x=>x.workers&&x.workers.length);
+  curWorkerId=t?t.workers[0].id:0;
+}
+document.getElementById('delWorkerBtn').onclick=()=>{
+  const ti=+document.getElementById('teamSel').value; const t=DATA.teams[ti]; if(!t)return;
+  const ws=t.workers||[];
+  if(!ws.length){alert('This team has no workers.');return;}
+  const list=ws.map(w=>`${w.id}. ${w.name} (${w.role})`).join('\n');
+  const inp=prompt(`Delete which worker from ${t.group} / ${t.team}? Enter the worker's number:\n\n${list}`); if(inp===null)return;
+  const wid=parseInt(inp,10);
+  const w=ws.find(x=>x.id===wid);
+  if(!w){alert('No worker with that number in this team.');return;}
+  if(!confirm(`Delete ${w.id}. ${w.name} and ALL their logged hours — every month, every year, every device?\n\nThis cannot be undone.`))return;
+  removeWorker(wid); purgeWorkersData(db,[wid]);
+  pickValidWorker();
+  persistStructure(); fillSelectors(); loadStore(); render(); attachSync();
+};
+document.getElementById('delTeamBtn').onclick=()=>{
+  if(DATA.teams.length<=1){alert('At least one team must remain.');return;}
+  const list=DATA.teams.map((t,i)=>`${i+1}. ${t.group} / ${t.team} (${(t.workers||[]).length} workers)`).join('\n');
+  const inp=prompt(`Delete which team? Enter its number:\n\n${list}`); if(inp===null)return;
+  const idx=parseInt(inp,10)-1;
+  if(isNaN(idx)||idx<0||idx>=DATA.teams.length){alert('Invalid team number.');return;}
+  const t=DATA.teams[idx]; const ws=t.workers||[];
+  const warn=ws.length?` and its ${ws.length} worker(s) plus ALL their logged hours — every month, every year, every device`:'';
+  if(!confirm(`Delete team ${t.group} / ${t.team}${warn}?\n\nThis cannot be undone.`))return;
+  if(ws.length) purgeWorkersData(db, ws.map(w=>w.id));
+  removeTeam(idx);
+  pickValidWorker();
+  persistStructure(); fillSelectors(); loadStore(); render(); attachSync();
+};
+document.getElementById('delTaskBtn').onclick=()=>{
+  if(DATA.tasks.length<=1){alert('At least one task must remain.');return;}
+  const list=DATA.tasks.map((t,i)=>`${i+1}. ${t} — ${TASK_EN[i]}`).join('\n');
+  const inp=prompt(`Delete which task? Enter its number:\n\n${list}`); if(inp===null)return;
+  const idx=parseInt(inp,10)-1;
+  if(isNaN(idx)||idx<0||idx>=DATA.tasks.length){alert('Invalid task number.');return;}
+  if(!confirm(`Delete task "${idx+1}. ${DATA.tasks[idx]}" everywhere?\n\nAll hours logged against it (every worker, every month, every year, every device) will be permanently removed, and later tasks renumber.`))return;
+  removeTask(idx);
+  remapLocalForTaskDelete(idx);
+  remapCloudForTaskDelete(db, idx, null);
+  persistStructure(); loadStore(); render();
 };
 
 curMonth = new Date().getFullYear()===curYear ? new Date().getMonth() : 0;

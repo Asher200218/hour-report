@@ -60,11 +60,16 @@ const firebaseConfig = {
 // for cross-device sync) so added workers/teams/tasks appear on all three pages.
 const STRUCT_KEY = 'hr_structure';
 function structSnapshot(){ return { teams: JSON.parse(JSON.stringify(DATA.teams)), tasks: [...DATA.tasks], tasksEn: [...TASK_EN] }; }
+// Firebase drops empty arrays and can return arrays as objects, so coerce
+// everything back to real arrays before using it.
+function asArray(v){ return Array.isArray(v) ? v : (v && typeof v==='object' ? Object.values(v) : null); }
 function applyStructure(s){
   if(!s || typeof s!=='object') return false;
-  if(Array.isArray(s.teams))   DATA.teams = s.teams.map(t => ({...t, workers: Array.isArray(t.workers) ? t.workers : t.workers ? Object.values(t.workers) : []}));
-  if(Array.isArray(s.tasks))   DATA.tasks = s.tasks;
-  if(Array.isArray(s.tasksEn)) TASK_EN    = s.tasksEn;
+  const teams=asArray(s.teams), tasks=asArray(s.tasks), tasksEn=asArray(s.tasksEn);
+  if(teams)   DATA.teams = teams.map(t => ({...t, workers: asArray(t.workers)||[]}));
+  if(tasks)   DATA.tasks = tasks;
+  if(tasksEn) TASK_EN    = tasksEn;
+  while(TASK_EN.length < DATA.tasks.length) TASK_EN.push(DATA.tasks[TASK_EN.length]);
   return true;
 }
 function loadStructureLocal(){ try{ return applyStructure(JSON.parse(localStorage.getItem(STRUCT_KEY))); }catch(e){ return false; } }
@@ -73,6 +78,58 @@ function nextWorkerId(){ let m=0; DATA.teams.forEach(t=>(t.workers||[]).forEach(
 function addTask(zh, en){ zh=(zh||'').trim(); if(!zh) return false; DATA.tasks.push(zh); TASK_EN.push((en||'').trim()||zh); return true; }
 function addTeam(group, team){ group=(group||'').trim(); team=(team||'').trim(); if(!group||!team) return false; DATA.teams.push({group, team, workers:[]}); return true; }
 function addWorker(teamIdx, name, role){ name=(name||'').trim(); const t=DATA.teams[teamIdx]; if(!name||!t) return false; (t.workers=t.workers||[]).push({ id: nextWorkerId(), name, role:(role||'').trim()||'—' }); return true; }
+function removeTask(idx){ if(idx<0||idx>=DATA.tasks.length||DATA.tasks.length<=1) return false; DATA.tasks.splice(idx,1); TASK_EN.splice(idx,1); return true; }
+function removeTeam(idx){ if(idx<0||idx>=DATA.teams.length||DATA.teams.length<=1) return false; DATA.teams.splice(idx,1); return true; }
+function removeWorker(wid){ for(const t of DATA.teams){ const i=(t.workers||[]).findIndex(w=>w.id===wid); if(i>=0){ t.workers.splice(i,1); return true; } } return false; }
+
+// ---- Deletion data hygiene ----
+// Hours are stored keyed by task index ("{taskIdx}_{dayOfMonth}"), so removing a task
+// must drop its hours and shift every later task's keys down one, or history would be
+// silently attributed to the wrong tasks. Worker data is keyed by worker id, and ids
+// are reused by nextWorkerId(), so a deleted worker's records must be purged too.
+function remapHoursForTaskDelete(h, idx){
+  const out={};
+  for(const k in h){
+    const us=k.indexOf('_'); const ti=us>0?+k.slice(0,us):NaN;
+    if(isNaN(ti)){ out[k]=h[k]; continue; }
+    if(ti===idx) continue;
+    out[ ti>idx ? (ti-1)+k.slice(us) : k ] = h[k];
+  }
+  return out;
+}
+// Remap every record saved in this browser (all years/months/workers).
+function remapLocalForTaskDelete(idx){
+  const keys=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&/^hr_\d{4}_\d+_\d+$/.test(k)) keys.push(k); }
+  keys.forEach(k=>{ try{ const v=JSON.parse(localStorage.getItem(k)||'{}'); v.h=remapHoursForTaskDelete(v.h||{}, idx); localStorage.setItem(k, JSON.stringify(v)); }catch(e){} });
+}
+// Remap the cloud copy (all years). Calls cb when done; safe with db=null.
+function remapCloudForTaskDelete(db, idx, cb){
+  if(!db){ cb&&cb(); return; }
+  db.ref('reports').once('value').then(s=>{
+    const all=s.val(); if(!all){ cb&&cb(); return; }
+    Object.keys(all).forEach(y=>{ const months=all[y]||{};
+      Object.keys(months).forEach(m=>{ const wk=months[m]||{};
+        Object.keys(wk).forEach(wid=>{ const r=wk[wid]||{}; r.h=remapHoursForTaskDelete(r.h||{}, idx); });
+      });
+    });
+    db.ref('reports').set(all).then(()=>cb&&cb()).catch(()=>cb&&cb());
+  }).catch(()=>cb&&cb());
+}
+// Delete every saved record for the given worker ids (this browser + cloud, all years).
+function purgeWorkersData(db, wids){
+  const set=new Set(wids.map(Number));
+  const keys=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); const m=k&&k.match(/^hr_\d{4}_\d+_(\d+)$/); if(m&&set.has(+m[1])) keys.push(k); }
+  keys.forEach(k=>localStorage.removeItem(k));
+  if(!db) return;
+  db.ref('reports').once('value').then(s=>{
+    const all=s.val(); if(!all) return;
+    const updates={};
+    Object.keys(all).forEach(y=>Object.keys(all[y]||{}).forEach(m=>Object.keys(all[y][m]||{}).forEach(wid=>{
+      if(set.has(+wid)) updates[`reports/${y}/${m}/${wid}`]=null;
+    })));
+    if(Object.keys(updates).length) db.ref().update(updates).catch(()=>{});
+  }).catch(()=>{});
+}
 // Firebase helpers (db may be null — all guard internally).
 function pushStructure(db){ if(db){ try{ db.ref('structure').set(structSnapshot()).catch(()=>{}); }catch(e){} } }
 function fetchStructure(db, cb){
