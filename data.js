@@ -146,3 +146,19 @@ function watchStructure(db, onChange){
 }
 // Apply any structure already saved on this device, before the pages render.
 loadStructureLocal();
+
+// ---- Print auto-fit ----
+// The hour grid is far wider than a printed page, and the on-screen scroll container
+// would clip it. Just for printing, scale each table down to the printable width of
+// A4 landscape; afterprint restores the screen layout untouched.
+window.addEventListener('beforeprint', function(){
+  var avail=1060; // ~A4 landscape width minus 8mm margins at 96dpi
+  document.querySelectorAll('.tablewrap').forEach(function(w){
+    var t=w.querySelector('table'); if(!t) return;
+    var z=Math.min(1, avail/t.scrollWidth);
+    if(z<1) w.style.zoom=z;
+  });
+});
+window.addEventListener('afterprint', function(){
+  document.querySelectorAll('.tablewrap').forEach(function(w){ w.style.zoom=''; });
+});

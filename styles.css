@@ -95,7 +95,16 @@ table.report th.rot{font-weight:700;text-align:center;min-width:34px}
 .manage button{font-size:12px;padding:6px 12px}
 .manage button.danger{color:#b91c1c;border-color:#fca5a5}
 .manage .mhint{font-size:11px;color:var(--muted);margin-left:auto}
+/* ---- chart tool (Task Totals & Team Breakdown) ---- */
+.chartwrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin-bottom:16px;height:380px;position:relative;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.chartempty{color:var(--muted);font-size:13px;padding:30px;text-align:center}
+@page{size:A4 landscape;margin:8mm}
 @media print{
   header .controls,.leave .field input{} button,.navlink,.manage{display:none}
   body{background:#fff}
+  header{position:static;box-shadow:none}
+  .tablewrap{overflow:visible;box-shadow:none}
+  thead th,.stickcol{position:static!important}
+  .chartwrap{break-inside:avoid}
 }

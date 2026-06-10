@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report — Task Totals</title>
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 <header>
@@ -24,6 +24,23 @@
 <main>
   <div id="banner"></div>
   <div class="summary" id="summary"></div>
+  <div class="manage">
+    <span class="mlabel">Chart:</span>
+    <select id="chartType">
+      <option value="none">No chart</option>
+      <option value="bar">Bar graph</option>
+      <option value="pie">Pie graph</option>
+    </select>
+    <select id="chartDim">
+      <option value="worker">Hours by worker</option>
+      <option value="team">Hours by team</option>
+    </select>
+    <span class="mhint">Charts use the task &amp; month selected above.</span>
+  </div>
+  <div class="chartwrap" id="chartwrap" hidden>
+    <canvas id="chartCanvas"></canvas>
+    <div id="chartEmpty" class="chartempty" hidden>No hours logged for this selection yet.</div>
+  </div>
   <div class="tablewrap"><table class="report" id="report"></table></div>
   <p class="hint">Totals sum every worker's hours logged against the selected task. Pick a single month or
   <b>All months</b>. Cross-device totals require cloud sync to be enabled; otherwise this shows only the data
@@ -32,7 +49,8 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=7"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="data.js?v=8"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of (t.workers||[]))if(w.id===id)return {w,team:t};return null;}
@@ -159,6 +177,39 @@ function render(){
   });
   html+=`<tr class="grand"><td></td><td colspan="2">All teams — total</td><td class="num">${fmt(grand)}</td><td></td></tr></tbody>`;
   document.getElementById('report').innerHTML=html;
+  renderChart();
+}
+
+// ---- chart tool ----
+let chart=null;
+function chartColors(n){ return Array.from({length:n},(_,i)=>`hsl(${Math.round(i*360/Math.max(n,1))},65%,55%)`); }
+function renderChart(){
+  const wrap=document.getElementById('chartwrap'), empty=document.getElementById('chartEmpty'), cv=document.getElementById('chartCanvas');
+  const type=document.getElementById('chartType').value;
+  if(chart){chart.destroy();chart=null;}
+  if(type==='none'||!window.Chart){wrap.hidden=true;return;}
+  const dim=document.getElementById('chartDim').value;
+  const taskIdx=+document.getElementById('taskSel').value;
+  const scope=document.getElementById('monthSel').value; const scopeKey=scope==='all'?'all':+scope;
+  let labels=[],vals=[];
+  if(dim==='team'){
+    DATA.teams.forEach(t=>{ const v=(t.workers||[]).reduce((a,w)=>a+workerTotal(w.id,taskIdx,scopeKey),0); if(v>0){labels.push(t.team);vals.push(v);} });
+  }else{
+    const arr=[]; DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{const v=workerTotal(w.id,taskIdx,scopeKey); if(v>0)arr.push([w.name,v]);}));
+    arr.sort((a,b)=>b[1]-a[1]); labels=arr.map(x=>x[0]); vals=arr.map(x=>x[1]);
+  }
+  wrap.hidden=false;
+  const has=labels.length>0;
+  empty.hidden=has; cv.style.display=has?'':'none';
+  if(!has)return;
+  const title=`${taskIdx+1}. ${DATA.tasks[taskIdx]} — ${scope==='all'?'All months':MONTHS[+scope]} ${curYear}`;
+  chart=new Chart(cv,{
+    type,
+    data:{labels,datasets:[{label:'Hours',data:vals,backgroundColor:chartColors(labels.length)}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{title:{display:true,text:title},legend:{display:type==='pie',position:'right'}},
+      scales:type==='bar'?{y:{beginAtZero:true,title:{display:true,text:'Hours'}}}:undefined}
+  });
 }
 
 function exportCSV(){
@@ -180,6 +231,8 @@ function exportCSV(){
 }
 
 buildSelectors();
+document.getElementById('chartType').onchange=renderChart;
+document.getElementById('chartDim').onchange=renderChart;
 document.getElementById('refreshBtn').onclick=loadData;
 document.getElementById('exportBtn').onclick=exportCSV;
 document.getElementById('printBtn').onclick=()=>window.print();

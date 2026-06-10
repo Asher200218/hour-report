@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report — Team Breakdown</title>
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 <header>
@@ -25,6 +25,24 @@
   <div id="banner"></div>
   <div class="summary" id="summary"></div>
 
+  <div class="manage">
+    <span class="mlabel">Chart:</span>
+    <select id="chartType">
+      <option value="none">No chart</option>
+      <option value="bar">Bar graph</option>
+      <option value="pie">Pie graph</option>
+    </select>
+    <select id="chartDim">
+      <option value="task">Hours by task</option>
+      <option value="member">Hours by member</option>
+    </select>
+    <span class="mhint">Charts use the team &amp; month selected above.</span>
+  </div>
+  <div class="chartwrap" id="chartwrap" hidden>
+    <canvas id="chartCanvas"></canvas>
+    <div id="chartEmpty" class="chartempty" hidden>No hours logged for this selection yet.</div>
+  </div>
+
   <h2 class="sec">Working time by task</h2>
   <div class="tablewrap"><table class="report" id="taskTable"></table></div>
 
@@ -39,7 +57,8 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=7"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="data.js?v=8"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 
@@ -189,6 +208,38 @@ function render(){
   taskTotals.forEach(v=>{ mh+=`<td class="num">${fmt(v)}</td>`; });
   mh+=`<td class="tot num">${fmt(grand)}</td><td></td></tr></tbody>`;
   document.getElementById('memberTable').innerHTML=mh;
+  renderChart();
+}
+
+// ---- chart tool ----
+let chart=null;
+function chartColors(n){ return Array.from({length:n},(_,i)=>`hsl(${Math.round(i*360/Math.max(n,1))},65%,55%)`); }
+function renderChart(){
+  const wrap=document.getElementById('chartwrap'), empty=document.getElementById('chartEmpty'), cv=document.getElementById('chartCanvas');
+  const type=document.getElementById('chartType').value;
+  if(chart){chart.destroy();chart=null;}
+  if(type==='none'||!window.Chart){wrap.hidden=true;return;}
+  const dim=document.getElementById('chartDim').value;
+  const {team, scope, tasks, taskTotals, rows}=compute();
+  let labels=[],vals=[];
+  if(dim==='member'){
+    const arr=rows.filter(r=>r.tot>0).sort((a,b)=>b.tot-a.tot);
+    labels=arr.map(r=>r.w.name); vals=arr.map(r=>r.tot);
+  }else{
+    tasks.forEach((tk,i)=>{ if(taskTotals[i]>0){labels.push(`${i+1}. ${tk}`);vals.push(taskTotals[i]);} });
+  }
+  wrap.hidden=false;
+  const has=labels.length>0;
+  empty.hidden=has; cv.style.display=has?'':'none';
+  if(!has)return;
+  const title=`${team.group} / ${team.team} — ${scope==='all'?'All months':MONTHS[+scope]} ${curYear}`;
+  chart=new Chart(cv,{
+    type,
+    data:{labels,datasets:[{label:'Hours',data:vals,backgroundColor:chartColors(labels.length)}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{title:{display:true,text:title},legend:{display:type==='pie',position:'right'}},
+      scales:type==='bar'?{y:{beginAtZero:true,title:{display:true,text:'Hours'}}}:undefined}
+  });
 }
 
 function exportCSV(){
@@ -213,6 +264,8 @@ function exportCSV(){
 }
 
 buildSelectors();
+document.getElementById('chartType').onchange=renderChart;
+document.getElementById('chartDim').onchange=renderChart;
 document.getElementById('refreshBtn').onclick=loadData;
 document.getElementById('exportBtn').onclick=exportCSV;
 document.getElementById('printBtn').onclick=()=>window.print();
