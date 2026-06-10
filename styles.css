@@ -77,6 +77,17 @@ table.report tr.sub td{background:#f8fafc;font-weight:700}
 table.report tr.grand td{background:var(--grand);font-weight:800;font-size:16px}
 table.report tr.zero td{color:#9ca3af}
 .bar{display:inline-block;height:10px;background:var(--accent);border-radius:5px;vertical-align:middle;min-width:0}
+/* ---- Team Breakdown page ---- */
+h2.sec{font-size:15px;margin:24px 2px 8px;color:#374151;font-weight:800}
+h2.sec:first-of-type{margin-top:6px}
+table.report td.z{color:#cbd5e1}
+table.report td.tot,table.report th.tot{font-weight:800;background:#f1f5f9;border-left:2px solid var(--line)}
+table.report tr.totals td{background:var(--grand);font-weight:800}
+table.report th.rot{font-weight:700;text-align:center;min-width:34px}
+.sharecell{display:flex;align-items:center;gap:8px;min-width:170px}
+.sharecell .barwrap{flex:1;height:10px;background:#eef2f7;border-radius:5px;overflow:hidden}
+.sharecell .barwrap>i{display:block;height:100%;background:var(--accent)}
+.sharecell .pct{font-variant-numeric:tabular-nums;color:var(--muted);min-width:46px;text-align:right}
 @media print{
   header .controls,.leave .field input{} button,.navlink{display:none}
   body{background:#fff}

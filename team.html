@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hour Report — Team Breakdown</title>
+<link rel="stylesheet" href="styles.css?v=4">
+</head>
+<body>
+<header>
+  <h1>Team Breakdown</h1><span class="badge" id="srcBadge">…</span>
+  <a class="navlink" href="index.html">← Hour Entry</a>
+  <a class="navlink" href="report.html">Task Totals →</a>
+  <div class="controls">
+    <div class="field"><label>Year</label><select id="yearSel"></select></div>
+    <div class="field"><label>Group / Team</label><select id="teamSel"></select></div>
+    <div class="field"><label>Month</label><select id="monthSel"></select></div>
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <button class="ghost" id="exportBtn">Export CSV</button>
+    <button class="ghost" id="printBtn">Print</button>
+  </div>
+</header>
+
+<main>
+  <div id="banner"></div>
+  <div class="summary" id="summary"></div>
+
+  <h2 class="sec">Working time by task</h2>
+  <div class="tablewrap"><table class="report" id="taskTable"></table></div>
+
+  <h2 class="sec">Member contributions</h2>
+  <div class="tablewrap"><table class="report" id="memberTable"></table></div>
+
+  <p class="hint">Totals sum the hours every member of the selected team logged, for the chosen month or
+  <b>All months</b>. The <b>member matrix</b> uses task numbers (1–<span id="taskCount"></span>) as columns — see the
+  task table above for what each number means. The <b>Share</b> column shows each member's portion of the team's
+  total working time. Cross-device totals require cloud sync; otherwise this shows only the data saved in this browser.</p>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="data.js?v=3"></script>
+<script>
+function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
+
+// dataset[month][workerId] = {h:{...}, leave:{...}}
+let dataset = {};
+let cloud = false;
+
+function readLocal(){
+  const ds={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i); if(!k||!k.startsWith(`hr_${curYear}_`))continue;
+    const parts=k.split('_'); const m=+parts[2], wid=+parts[3];
+    if(isNaN(m)||isNaN(wid))continue;
+    try{const v=JSON.parse(localStorage.getItem(k)); (ds[m]=ds[m]||{})[wid]={h:v.h||{},leave:v.leave||{}};}catch(e){}
+  }
+  return ds;
+}
+function fbReady(){return firebaseConfig && firebaseConfig.apiKey && firebaseConfig.databaseURL;}
+function loadData(){
+  setSrc('loading');
+  if(fbReady()){
+    try{
+      if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+      const db=firebase.database();
+      db.ref('years').once('value').then(s=>fillYearSelect(document.getElementById('yearSel'), Object.keys(s.val()||{}).map(Number))).catch(()=>{});
+      db.ref(`reports/${curYear}`).once('value').then(snap=>{
+        const val=snap.val()||{};
+        const ds={};
+        Object.keys(val).forEach(m=>{ const wk=val[m]||{};
+          Object.keys(wk).forEach(wid=>{ const r=wk[wid]||{}; (ds[+m]=ds[+m]||{})[+wid]={h:r.h||{},leave:r.leave||{}}; });
+        });
+        dataset=ds; cloud=true; setSrc('cloud'); render();
+      }).catch(e=>{console.warn(e); dataset=readLocal(); cloud=false; setSrc('local'); render();});
+      return;
+    }catch(e){console.warn(e);}
+  }
+  dataset=readLocal(); cloud=false; setSrc('local'); render();
+}
+function setSrc(state){
+  const b=document.getElementById('srcBadge');
+  const m={loading:['… loading','rgba(255,255,255,.4)'],cloud:['☁ All devices','#16a34a'],local:['⚠ This device only','#b45309']};
+  const [t,c]=m[state]||m.loading; b.textContent=t; b.style.background=c;
+}
+
+function sumTask(record, taskIdx){
+  if(!record||!record.h)return 0;
+  let s=0; const pre=`${taskIdx}_`;
+  for(const k in record.h){ if(k.startsWith(pre)) s+=num(record.h[k]); }
+  return s;
+}
+// total hours for a worker on taskIdx within scope (month index or 'all')
+function workerTaskTotal(wid, taskIdx, scope){
+  let s=0;
+  const months = scope==='all' ? Object.keys(dataset) : [scope];
+  months.forEach(m=>{ const rec=dataset[m] && dataset[m][wid]; if(rec) s+=sumTask(rec, taskIdx); });
+  return s;
+}
+function fmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
+
+function curTeam(){ return DATA.teams[+document.getElementById('teamSel').value]; }
+
+function buildSelectors(){
+  const ys=document.getElementById('yearSel');
+  fillYearSelect(ys);
+  ys.onchange=function(){ if(onYearSelect(this)){ loadData(); } else { this.value=String(curYear); } };
+  const teamSel=document.getElementById('teamSel');
+  teamSel.innerHTML=DATA.teams.map((t,i)=>`<option value="${i}">${t.group} / ${t.team}</option>`).join('');
+  const ms=document.getElementById('monthSel');
+  ms.innerHTML=`<option value="all">All months</option>`+MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
+  document.getElementById('taskCount').textContent=DATA.tasks.length;
+  teamSel.onchange=render; ms.onchange=render;
+}
+
+// compute matrix for the selected team & scope
+function compute(){
+  const team=curTeam();
+  const scope=document.getElementById('monthSel').value;
+  const scopeKey = scope==='all' ? 'all' : +scope;
+  const tasks=DATA.tasks;
+  const taskTotals=tasks.map(()=>0);
+  let grand=0;
+  const rows=team.workers.map(w=>{
+    const cells=tasks.map((_,ti)=>{ const v=workerTaskTotal(w.id, ti, scopeKey); taskTotals[ti]+=v; return v; });
+    const tot=cells.reduce((a,b)=>a+b,0); grand+=tot;
+    return {w, cells, tot};
+  });
+  return {team, scope, scopeKey, tasks, taskTotals, grand, rows};
+}
+
+function render(){
+  const {team, scope, tasks, taskTotals, grand, rows}=compute();
+
+  // banner
+  document.getElementById('banner').innerHTML = cloud
+    ? `<div class="banner ok">☁ Showing combined data from all devices via cloud sync.</div>`
+    : `<div class="banner">⚠ Cloud sync not active here — these totals reflect only the hours saved in <b>this</b> browser.</div>`;
+
+  // headline stats
+  const scopeLabel = scope==='all' ? 'All months' : MONTHS[+scope];
+  const membersWithHours = rows.filter(r=>r.tot>0).length;
+  let topTask={i:-1,v:0}; taskTotals.forEach((v,i)=>{ if(v>topTask.v) topTask={i,v}; });
+  let topMember={name:'—',v:0}; rows.forEach(r=>{ if(r.tot>topMember.v) topMember={name:r.w.name,v:r.tot}; });
+  document.getElementById('summary').innerHTML=`
+    <div class="card"><div class="k">Team</div><div class="v" style="font-size:18px">${team.team}</div><div class="sub">${team.group}</div></div>
+    <div class="card"><div class="k">Total hours</div><div class="v ok">${fmt(grand)}</div><div class="sub">${scopeLabel} · ${curYear}</div></div>
+    <div class="card"><div class="k">Members with hours</div><div class="v">${membersWithHours}</div><div class="sub">of ${team.workers.length} in team</div></div>
+    <div class="card"><div class="k">Top task</div><div class="v" style="font-size:16px">${topTask.i<0?'—':(topTask.i+1)+'. '+tasks[topTask.i]}</div><div class="sub">${fmt(topTask.v)} h</div></div>
+    <div class="card"><div class="k">Top contributor</div><div class="v" style="font-size:18px">${topMember.name}</div><div class="sub">${fmt(topMember.v)} h</div></div>`;
+
+  // ---- Table 1: working time by task ----
+  const maxTask=Math.max(1,...taskTotals);
+  let th=`<thead><tr><th>#</th><th>Task</th><th class="num">Hours</th><th>Share of team</th></tr></thead><tbody>`;
+  tasks.forEach((tk,i)=>{
+    const v=taskTotals[i]; const pct=grand>0?Math.round(v/grand*100):0; const w=Math.round(v/maxTask*100);
+    th+=`<tr class="${v>0?'':'zero'}"><td>${i+1}</td><td>${tk} <span style="color:var(--muted)">— ${TASK_EN[i]}</span></td>`+
+        `<td class="num">${fmt(v)}</td>`+
+        `<td><div class="sharecell"><div class="barwrap"><i style="width:${w}%"></i></div><span class="pct">${pct}%</span></div></td></tr>`;
+  });
+  th+=`<tr class="grand"><td></td><td>Team total</td><td class="num">${fmt(grand)}</td><td></td></tr></tbody>`;
+  document.getElementById('taskTable').innerHTML=th;
+
+  // ---- Table 2: member contribution matrix ----
+  const maxMember=Math.max(1,...rows.map(r=>r.tot));
+  let mh=`<thead><tr><th>#</th><th>Member</th><th>Role</th>`;
+  tasks.forEach((tk,i)=>{ mh+=`<th class="rot num" title="${i+1}. ${tk} — ${TASK_EN[i]}">${i+1}</th>`; });
+  mh+=`<th class="tot num">Total</th><th>Share of team</th></tr></thead><tbody>`;
+  rows.forEach(({w,cells,tot})=>{
+    const pct=grand>0?Math.round(tot/grand*100):0; const bw=Math.round(tot/maxMember*100);
+    mh+=`<tr class="${tot>0?'':'zero'}"><td>${w.id}</td><td>${w.name}</td><td>${w.role}</td>`;
+    cells.forEach(v=>{ mh+=`<td class="num${v>0?'':' z'}">${v>0?fmt(v):'·'}</td>`; });
+    mh+=`<td class="tot num">${fmt(tot)}</td>`+
+        `<td><div class="sharecell"><div class="barwrap"><i style="width:${bw}%"></i></div><span class="pct">${pct}%</span></div></td></tr>`;
+  });
+  // totals row
+  mh+=`<tr class="totals"><td></td><td colspan="2">Team total</td>`;
+  taskTotals.forEach(v=>{ mh+=`<td class="num">${fmt(v)}</td>`; });
+  mh+=`<td class="tot num">${fmt(grand)}</td><td></td></tr></tbody>`;
+  document.getElementById('memberTable').innerHTML=mh;
+}
+
+function exportCSV(){
+  const {team, scope, tasks, taskTotals, grand, rows}=compute();
+  const scopeLabel=scope==='all'?'AllMonths':MONTHS[+scope];
+  const out=[];
+  out.push([`Team Breakdown ${curYear}`, `${team.group} / ${team.team}`, scopeLabel, cloud?'all devices':'this device only']);
+  out.push([]);
+  out.push(['Working time by task']);
+  out.push(['#','Task','English','Hours','Share %']);
+  tasks.forEach((tk,i)=>{ const v=taskTotals[i]; out.push([i+1,tk,TASK_EN[i],v, grand>0?Math.round(v/grand*100):0]); });
+  out.push(['','Team total','',grand,'']);
+  out.push([]);
+  out.push(['Member contributions (hours per task)']);
+  out.push(['#','Member','Role',...tasks.map((t,i)=>`${i+1}. ${t}`),'Total','Share %']);
+  rows.forEach(({w,cells,tot})=>{ out.push([w.id,w.name,w.role,...cells,tot, grand>0?Math.round(tot/grand*100):0]); });
+  out.push(['','Team total','',...taskTotals,grand,'']);
+  const csv=out.map(r=>r.map(c=>{const s=String(c??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`TeamBreakdown_${curYear}_${team.team}_${scopeLabel}.csv`; a.click();
+}
+
+buildSelectors();
+document.getElementById('refreshBtn').onclick=loadData;
+document.getElementById('exportBtn').onclick=exportCSV;
+document.getElementById('printBtn').onclick=()=>window.print();
+loadData();
+</script>
+</body>
+</html>
