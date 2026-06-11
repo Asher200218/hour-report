@@ -121,13 +121,25 @@ function workerTaskTotal(wid, taskIdx, scope){
 }
 function fmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
-function curTeam(){ return DATA.teams[+document.getElementById('teamSel').value]; }
+function curTeam(){
+  const v=document.getElementById('teamSel').value;
+  if(v==='all'){
+    // synthetic team combining every group/team; tag each member with their team
+    const workers=[]; DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>workers.push({...w, role:`${w.role} · ${t.team}`})));
+    return {group:'All groups', team:'All teams', workers};
+  }
+  return DATA.teams[+v];
+}
+function teamOptions(){
+  return `<option value="all">— All groups / teams —</option>`
+    + DATA.teams.map((t,i)=>`<option value="${i}">${t.group} / ${t.team}</option>`).join('');
+}
 
 // Rebuild the team list after the structure (teams/tasks) may have changed, keeping selection.
 function rebuildSelectors(){
   const ts=document.getElementById('teamSel'); const cur=ts.value;
-  ts.innerHTML=DATA.teams.map((t,i)=>`<option value="${i}">${t.group} / ${t.team}</option>`).join('');
-  if(cur!=='' && +cur<DATA.teams.length) ts.value=cur;
+  ts.innerHTML=teamOptions();
+  ts.value = (cur==='all'||(cur!==''&&+cur<DATA.teams.length)) ? cur : '0';
   document.getElementById('taskCount').textContent=DATA.tasks.length;
 }
 
@@ -136,7 +148,8 @@ function buildSelectors(){
   fillYearSelect(ys);
   ys.onchange=function(){ if(onYearSelect(this)){ loadData(); } else { this.value=String(curYear); } };
   const teamSel=document.getElementById('teamSel');
-  teamSel.innerHTML=DATA.teams.map((t,i)=>`<option value="${i}">${t.group} / ${t.team}</option>`).join('');
+  teamSel.innerHTML=teamOptions();
+  teamSel.value='0';
   const ms=document.getElementById('monthSel');
   ms.innerHTML=`<option value="all">All months</option>`+MONTHS.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
   document.getElementById('taskCount').textContent=DATA.tasks.length;
