@@ -48,7 +48,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=9"></script>
+<script src="data.js?v=10"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -125,8 +125,10 @@ function pushRemote(){
   clearTimeout(writeTimer);
   writeTimer=setTimeout(()=>{
     registerYearRemote(curYear);
-    db.ref(fbPath()).set({h:store.h||{},leave:store.leave||{}})
-      .then(()=>setSync('online')).catch(e=>{console.warn('sync write',e);setSync('offline');});
+    try{
+      db.ref(fbPath()).set({h:store.h||{},leave:store.leave||{}})
+        .then(()=>setSync('online')).catch(e=>{console.warn('sync write',e);setSync('offline');});
+    }catch(e){ console.warn('sync write (invalid key?)',e); setSync('offline'); } // bad key throws synchronously
   },400);
 }
 let savedTimer;

@@ -5,17 +5,26 @@ let TASK_EN = ["Order design","Order proofreading","Order communication","IPU or
 let TASK_SUBS = [];
 
 // ---- Hour-key helpers ----
-// store.h keys are "{taskIdx}_{dom}" (parent-direct) or "{taskIdx}.{subIdx}_{dom}" (subtask).
+// store.h keys are "{taskIdx}_{dom}" (parent-direct) or "{taskIdx}-{subIdx}_{dom}" (subtask).
+// Subtasks use '-' (not '.') because Firebase Realtime Database forbids '.' in keys, which
+// silently broke subtask sync. '.' is still parsed as a legacy separator for old local data.
 function parseKey(k){
   const us=k.indexOf('_'); if(us<=0) return null;
   const dom=+k.slice(us+1); if(isNaN(dom)) return null;
-  const tp=k.slice(0,us); const dot=tp.indexOf('.');
-  if(dot<0){ const ti=+tp; return isNaN(ti)?null:{ti, si:null, dom}; }
-  const ti=+tp.slice(0,dot), si=+tp.slice(dot+1);
+  const tp=k.slice(0,us);
+  let sep=tp.indexOf('-'); if(sep<0) sep=tp.indexOf('.');
+  if(sep<0){ const ti=+tp; return isNaN(ti)?null:{ti, si:null, dom}; }
+  const ti=+tp.slice(0,sep), si=+tp.slice(sep+1);
   return (isNaN(ti)||isNaN(si))?null:{ti, si, dom};
 }
-function makeKey(ti, si, dom){ return (si==null ? `${ti}` : `${ti}.${si}`)+`_${dom}`; }
+function makeKey(ti, si, dom){ return (si==null ? `${ti}` : `${ti}-${si}`)+`_${dom}`; }
 function subsOf(ti){ return asArray(TASK_SUBS[ti])||[]; }
+// Rewrite a record's hour keys to the canonical form (legacy '.' subtask keys -> '-').
+function normalizeHourKeys(h){
+  let changed=false; const out={};
+  for(const k in h){ const p=parseKey(k); const nk=p?makeKey(p.ti,p.si,p.dom):k; if(nk!==k)changed=true; out[nk]=h[k]; }
+  return changed?out:h;
+}
 const LEAVE_CATS = ["Annual leave","Sick leave","Maternity/paternity/parental leave","Comp off"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
@@ -80,13 +89,22 @@ function structSnapshot(){ return { teams: JSON.parse(JSON.stringify(DATA.teams)
 function asArray(v){ return Array.isArray(v) ? v : (v && typeof v==='object' ? Object.values(v) : null); }
 function applyStructure(s){
   if(!s || typeof s!=='object') return false;
-  const teams=asArray(s.teams), tasks=asArray(s.tasks), tasksEn=asArray(s.tasksEn), tasksSubs=asArray(s.tasksSubs);
+  const teams=asArray(s.teams), tasks=asArray(s.tasks), tasksEn=asArray(s.tasksEn);
   if(teams)   DATA.teams = teams.map(t => ({...t, workers: asArray(t.workers)||[]}));
   if(tasks)   DATA.tasks = tasks;
   if(tasksEn) TASK_EN    = tasksEn;
-  if(tasksSubs) TASK_SUBS = tasksSubs.map(s => asArray(s)||[]);
   while(TASK_EN.length < DATA.tasks.length) TASK_EN.push(DATA.tasks[TASK_EN.length]);
-  while(TASK_SUBS.length < DATA.tasks.length) TASK_SUBS.push([]);
+  // Firebase drops empty arrays, so a sparse tasksSubs comes back as an object keyed by
+  // task index ({2:[...]}). Rebuild a dense array keeping each list at its own task index.
+  if(s.tasksSubs!=null){
+    const out = DATA.tasks.map(()=>[]);
+    const assign=(i,v)=>{ if(i>=0 && i<out.length){ const a=asArray(v); if(a) out[i]=a; } };
+    if(Array.isArray(s.tasksSubs)) s.tasksSubs.forEach((v,i)=>assign(i,v));
+    else if(typeof s.tasksSubs==='object') Object.keys(s.tasksSubs).forEach(k=>assign(+k, s.tasksSubs[k]));
+    TASK_SUBS = out;
+  } else {
+    while(TASK_SUBS.length < DATA.tasks.length) TASK_SUBS.push([]);
+  }
   return true;
 }
 function loadStructureLocal(){ try{ return applyStructure(JSON.parse(localStorage.getItem(STRUCT_KEY))); }catch(e){ return false; } }
@@ -180,6 +198,18 @@ function watchStructure(db, onChange){
 }
 // Apply any structure already saved on this device, before the pages render.
 loadStructureLocal();
+
+// One-time migration: rewrite any legacy '.'-form subtask keys saved on this device to the
+// Firebase-safe '-' form, so they sync and display consistently.
+function migrateLocalKeys(){
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i); if(!key||!/^hr_\d{4}_\d+_\d+$/.test(key)) continue;
+    try{ const v=JSON.parse(localStorage.getItem(key)||'{}');
+      if(v&&v.h){ const nh=normalizeHourKeys(v.h); if(nh!==v.h){ v.h=nh; localStorage.setItem(key, JSON.stringify(v)); } }
+    }catch(e){}
+  }
+}
+migrateLocalKeys();
 
 // ---- Print auto-fit ----
 // The hour grid is far wider than a printed page, and the on-screen scroll container
