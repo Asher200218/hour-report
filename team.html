@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report — Team Breakdown</title>
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 <header>
@@ -58,7 +58,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="data.js?v=8"></script>
+<script src="data.js?v=9"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 
@@ -106,19 +106,24 @@ function setSrc(state){
   const [t,c]=m[state]||m.loading; b.textContent=t; b.style.background=c;
 }
 
+// full task total (parent-direct + every subtask of taskIdx)
 function sumTask(record, taskIdx){
   if(!record||!record.h)return 0;
-  let s=0; const pre=`${taskIdx}_`;
-  for(const k in record.h){ if(k.startsWith(pre)) s+=num(record.h[k]); }
+  let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx) s+=num(record.h[k]); }
   return s;
 }
-// total hours for a worker on taskIdx within scope (month index or 'all')
-function workerTaskTotal(wid, taskIdx, scope){
-  let s=0;
-  const months = scope==='all' ? Object.keys(dataset) : [scope];
-  months.forEach(m=>{ const rec=dataset[m] && dataset[m][wid]; if(rec) s+=sumTask(rec, taskIdx); });
+function sumSubtask(record, taskIdx, subIdx){
+  if(!record||!record.h)return 0;
+  let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx&&p.si===subIdx) s+=num(record.h[k]); }
   return s;
 }
+// sum fn(record) for a worker across the scope (month index or 'all')
+function workerScopeSum(wid, scope, fn){
+  let s=0; const months = scope==='all' ? Object.keys(dataset) : [scope];
+  months.forEach(m=>{ const rec=dataset[m] && dataset[m][wid]; if(rec) s+=fn(rec); });
+  return s;
+}
+function workerTaskTotal(wid, taskIdx, scope){ return workerScopeSum(wid, scope, r=>sumTask(r, taskIdx)); }
 function fmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
 function curTeam(){
@@ -156,24 +161,33 @@ function buildSelectors(){
   teamSel.onchange=render; ms.onchange=render;
 }
 
-// compute matrix for the selected team & scope
+// compute matrix for the selected team & scope.
+// Columns are a flat list: each task's parent column (rollup = direct+subs) then one
+// column per subtask. Worker Total sums parent task totals only, so rollup+detail in the
+// same row never double-counts.
 function compute(){
   const team=curTeam();
   const scope=document.getElementById('monthSel').value;
   const scopeKey = scope==='all' ? 'all' : +scope;
   const tasks=DATA.tasks;
-  const taskTotals=tasks.map(()=>0);
+  const cols=[];
+  tasks.forEach((tk,ti)=>{ cols.push({ti, si:null, label:`${ti+1}`, parent:true, name:tk, en:TASK_EN[ti]});
+    subsOf(ti).forEach((s,si)=>cols.push({ti, si, label:`${ti+1}.${si+1}`, parent:false, name:s.zh, en:s.en})); });
+  const colTotals=cols.map(()=>0);
   let grand=0;
   const rows=(team.workers||[]).map(w=>{
-    const cells=tasks.map((_,ti)=>{ const v=workerTaskTotal(w.id, ti, scopeKey); taskTotals[ti]+=v; return v; });
-    const tot=cells.reduce((a,b)=>a+b,0); grand+=tot;
+    const cells=cols.map((c,ci)=>{ const v = c.parent ? workerTaskTotal(w.id,c.ti,scopeKey) : workerScopeSum(w.id,scopeKey,r=>sumSubtask(r,c.ti,c.si)); colTotals[ci]+=v; return v; });
+    const tot=tasks.reduce((a,_,ti)=>a+workerTaskTotal(w.id,ti,scopeKey),0); grand+=tot;
     return {w, cells, tot};
   });
-  return {team, scope, scopeKey, tasks, taskTotals, grand, rows};
+  return {team, scope, scopeKey, tasks, cols, colTotals, grand, rows};
 }
 
 function render(){
-  const {team, scope, tasks, taskTotals, grand, rows}=compute();
+  const {team, scope, tasks, cols, colTotals, grand, rows}=compute();
+  // column-total lookup by (ti) parent or (ti,si) subtask
+  const colIdx={}; cols.forEach((c,ci)=>{ colIdx[c.si==null?`${c.ti}`:`${c.ti}.${c.si}`]=ci; });
+  const cval=(ti,si)=>colTotals[colIdx[si==null?`${ti}`:`${ti}.${si}`]]||0;
 
   // banner
   document.getElementById('banner').innerHTML = cloud
@@ -183,7 +197,7 @@ function render(){
   // headline stats
   const scopeLabel = scope==='all' ? 'All months' : MONTHS[+scope];
   const membersWithHours = rows.filter(r=>r.tot>0).length;
-  let topTask={i:-1,v:0}; taskTotals.forEach((v,i)=>{ if(v>topTask.v) topTask={i,v}; });
+  let topTask={i:-1,v:0}; tasks.forEach((tk,i)=>{ const v=cval(i,null); if(v>topTask.v) topTask={i,v}; });
   let topMember={name:'—',v:0}; rows.forEach(r=>{ if(r.tot>topMember.v) topMember={name:r.w.name,v:r.tot}; });
   document.getElementById('summary').innerHTML=`
     <div class="card"><div class="k">Team</div><div class="v" style="font-size:18px">${team.team}</div><div class="sub">${team.group}</div></div>
@@ -192,33 +206,43 @@ function render(){
     <div class="card"><div class="k">Top task</div><div class="v" style="font-size:16px">${topTask.i<0?'—':(topTask.i+1)+'. '+tasks[topTask.i]}</div><div class="sub">${fmt(topTask.v)} h</div></div>
     <div class="card"><div class="k">Top contributor</div><div class="v" style="font-size:18px">${topMember.name}</div><div class="sub">${fmt(topMember.v)} h</div></div>`;
 
-  // ---- Table 1: working time by task ----
-  const maxTask=Math.max(1,...taskTotals);
-  let th=`<thead><tr><th>#</th><th>Task</th><th class="num">Hours</th><th>Share of team</th></tr></thead><tbody>`;
+  // ---- Table 1: working time by task (subtasks indented under their parent) ----
+  const maxTask=Math.max(1,...tasks.map((_,i)=>cval(i,null)));
+  const bar=(w)=>`<div class="sharecell"><div class="barwrap"><i style="width:${w}%"></i></div><span class="pct">${w}%</span></div>`;
+  let th=`<thead><tr><th>#</th><th>Task</th><th class="num">Hours</th><th>Share</th></tr></thead><tbody>`;
   tasks.forEach((tk,i)=>{
-    const v=taskTotals[i]; const pct=grand>0?Math.round(v/grand*100):0; const w=Math.round(v/maxTask*100);
-    th+=`<tr class="${v>0?'':'zero'}"><td>${i+1}</td><td>${tk} <span style="color:var(--muted)">— ${TASK_EN[i]}</span></td>`+
-        `<td class="num">${fmt(v)}</td>`+
-        `<td><div class="sharecell"><div class="barwrap"><i style="width:${w}%"></i></div><span class="pct">${pct}%</span></div></td></tr>`;
+    const v=cval(i,null); const pct=grand>0?Math.round(v/grand*100):0; const w=Math.round(v/maxTask*100);
+    const subs=subsOf(i);
+    th+=`<tr class="${v>0?'':'zero'}${subs.length?' grouprow':''}"><td>${i+1}</td><td>${tk} <span style="color:var(--muted)">— ${TASK_EN[i]}</span></td>`+
+        `<td class="num">${fmt(v)}</td><td>${bar(w)}</td></tr>`;
+    if(subs.length){
+      const denom=Math.max(1,v);
+      subs.forEach((s,si)=>{ const sv=cval(i,si);
+        th+=`<tr class="subrow ${sv>0?'':'zero'}"><td>${i+1}.${si+1}</td><td class="subcell">${s.zh} <span style="color:var(--muted)">— ${s.en}</span></td>`+
+            `<td class="num">${fmt(sv)}</td><td>${bar(Math.round(sv/denom*100))}</td></tr>`; });
+      const dv=v-subs.reduce((a,_,si)=>a+cval(i,si),0);
+      th+=`<tr class="subrow ${dv>0?'':'zero'}"><td>${i+1}.0</td><td class="subcell">Direct (no subtask)</td>`+
+          `<td class="num">${fmt(dv)}</td><td>${bar(Math.round(dv/denom*100))}</td></tr>`;
+    }
   });
   th+=`<tr class="grand"><td></td><td>Team total</td><td class="num">${fmt(grand)}</td><td></td></tr></tbody>`;
   document.getElementById('taskTable').innerHTML=th;
 
-  // ---- Table 2: member contribution matrix ----
+  // ---- Table 2: member contribution matrix (parent task columns + a column per subtask) ----
   const maxMember=Math.max(1,...rows.map(r=>r.tot));
   let mh=`<thead><tr><th>#</th><th>Member</th><th>Role</th>`;
-  tasks.forEach((tk,i)=>{ mh+=`<th class="rot num" title="${i+1}. ${tk} — ${TASK_EN[i]}">${i+1}</th>`; });
+  cols.forEach(c=>{ mh+=`<th class="rot num${c.parent?' tcol':''}" title="${c.label}. ${c.name} — ${c.en}">${c.label}</th>`; });
   mh+=`<th class="tot num">Total</th><th>Share of team</th></tr></thead><tbody>`;
   rows.forEach(({w,cells,tot})=>{
     const pct=grand>0?Math.round(tot/grand*100):0; const bw=Math.round(tot/maxMember*100);
     mh+=`<tr class="${tot>0?'':'zero'}"><td>${w.id}</td><td>${w.name}</td><td>${w.role}</td>`;
-    cells.forEach(v=>{ mh+=`<td class="num${v>0?'':' z'}">${v>0?fmt(v):'·'}</td>`; });
+    cells.forEach((v,ci)=>{ mh+=`<td class="num${cols[ci].parent?' tcol':''}${v>0?'':' z'}">${v>0?fmt(v):'·'}</td>`; });
     mh+=`<td class="tot num">${fmt(tot)}</td>`+
         `<td><div class="sharecell"><div class="barwrap"><i style="width:${bw}%"></i></div><span class="pct">${pct}%</span></div></td></tr>`;
   });
   // totals row
   mh+=`<tr class="totals"><td></td><td colspan="2">Team total</td>`;
-  taskTotals.forEach(v=>{ mh+=`<td class="num">${fmt(v)}</td>`; });
+  cols.forEach((c,ci)=>{ mh+=`<td class="num${c.parent?' tcol':''}">${fmt(colTotals[ci])}</td>`; });
   mh+=`<td class="tot num">${fmt(grand)}</td><td></td></tr></tbody>`;
   document.getElementById('memberTable').innerHTML=mh;
   renderChart();
@@ -233,13 +257,14 @@ function renderChart(){
   if(chart){chart.destroy();chart=null;}
   if(type==='none'||!window.Chart){wrap.hidden=true;return;}
   const dim=document.getElementById('chartDim').value;
-  const {team, scope, tasks, taskTotals, rows}=compute();
+  const {team, scope, tasks, cols, colTotals, rows}=compute();
   let labels=[],vals=[];
   if(dim==='member'){
     const arr=rows.filter(r=>r.tot>0).sort((a,b)=>b.tot-a.tot);
     labels=arr.map(r=>r.w.name); vals=arr.map(r=>r.tot);
   }else{
-    tasks.forEach((tk,i)=>{ if(taskTotals[i]>0){labels.push(`${i+1}. ${tk}`);vals.push(taskTotals[i]);} });
+    // parent task totals only (rollup); avoids double-counting subtasks
+    cols.forEach((c,ci)=>{ if(c.parent && colTotals[ci]>0){labels.push(`${c.ti+1}. ${c.name}`);vals.push(colTotals[ci]);} });
   }
   wrap.hidden=false;
   const has=labels.length>0;
@@ -256,20 +281,28 @@ function renderChart(){
 }
 
 function exportCSV(){
-  const {team, scope, tasks, taskTotals, grand, rows}=compute();
+  const {team, scope, tasks, cols, colTotals, grand, rows}=compute();
+  const colIdx={}; cols.forEach((c,ci)=>{ colIdx[c.si==null?`${c.ti}`:`${c.ti}.${c.si}`]=ci; });
+  const cval=(ti,si)=>colTotals[colIdx[si==null?`${ti}`:`${ti}.${si}`]]||0;
   const scopeLabel=scope==='all'?'AllMonths':MONTHS[+scope];
   const out=[];
   out.push([`Team Breakdown ${curYear}`, `${team.group} / ${team.team}`, scopeLabel, cloud?'all devices':'this device only']);
   out.push([]);
-  out.push(['Working time by task']);
+  out.push(['Working time by task (subtasks indented)']);
   out.push(['#','Task','English','Hours','Share %']);
-  tasks.forEach((tk,i)=>{ const v=taskTotals[i]; out.push([i+1,tk,TASK_EN[i],v, grand>0?Math.round(v/grand*100):0]); });
+  tasks.forEach((tk,i)=>{ const v=cval(i,null); out.push([i+1,tk,TASK_EN[i],v, grand>0?Math.round(v/grand*100):0]);
+    const subs=subsOf(i);
+    if(subs.length){ const denom=Math.max(1,v);
+      subs.forEach((s,si)=>{ const sv=cval(i,si); out.push([`${i+1}.${si+1}`,`   ${s.zh}`,s.en,sv, Math.round(sv/denom*100)]); });
+      const dv=v-subs.reduce((a,_,si)=>a+cval(i,si),0); out.push([`${i+1}.0`,'   Direct (no subtask)','',dv, Math.round(dv/denom*100)]);
+    }
+  });
   out.push(['','Team total','',grand,'']);
   out.push([]);
-  out.push(['Member contributions (hours per task)']);
-  out.push(['#','Member','Role',...tasks.map((t,i)=>`${i+1}. ${t}`),'Total','Share %']);
+  out.push(['Member contributions (parent task columns + subtask columns)']);
+  out.push(['#','Member','Role',...cols.map(c=>c.label),'Total','Share %']);
   rows.forEach(({w,cells,tot})=>{ out.push([w.id,w.name,w.role,...cells,tot, grand>0?Math.round(tot/grand*100):0]); });
-  out.push(['','Team total','',...taskTotals,grand,'']);
+  out.push(['','Team total','',...colTotals,grand,'']);
   const csv=out.map(r=>r.map(c=>{const s=String(c??'');return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\n');
   const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);

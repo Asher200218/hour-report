@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report 2026</title>
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 <header>
@@ -31,9 +31,11 @@
     <button class="ghost" id="addWorkerBtn">+ Worker</button>
     <button class="ghost" id="addTeamBtn">+ Team</button>
     <button class="ghost" id="addTaskBtn">+ Task</button>
+    <button class="ghost" id="addSubtaskBtn">+ Subtask</button>
     <button class="ghost danger" id="delWorkerBtn">− Worker</button>
     <button class="ghost danger" id="delTeamBtn">− Team</button>
     <button class="ghost danger" id="delTaskBtn">− Task</button>
+    <button class="ghost danger" id="delSubtaskBtn">− Subtask</button>
     <span class="mhint">Changes sync to every device and to the Task Totals &amp; Team Breakdown pages.</span>
   </div>
   <div class="summary" id="summary"></div>
@@ -46,7 +48,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=8"></script>
+<script src="data.js?v=9"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -130,8 +132,12 @@ function pushRemote(){
 let savedTimer;
 function flashSaved(){const m=document.getElementById('savedMsg');m.classList.add('show');clearTimeout(savedTimer);savedTimer=setTimeout(()=>m.classList.remove('show'),1200);}
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
-function hv(task,dom){return store.h[`${task}_${dom}`];}
-function setHv(task,dom,val){const k=`${task}_${dom}`; if(val===''||val==null){delete store.h[k];}else{store.h[k]=val;}}
+function hv(task,dom,sub){return store.h[makeKey(task, sub==null?null:sub, dom)];}
+function setHv(task,dom,val,sub){const k=makeKey(task, sub==null?null:sub, dom); if(val===''||val==null){delete store.h[k];}else{store.h[k]=val;}}
+// Flat list of editable rows in render order: each task's parent (si:null) then its subtasks.
+function entryRows(){ const rows=[]; DATA.tasks.forEach((tk,ti)=>{ rows.push({ti,si:null}); subsOf(ti).forEach((s,si)=>rows.push({ti,si})); }); return rows; }
+function cellWk(ti,si,wi){ return document.querySelector(`td[data-wktot="${wi}"][data-task="${ti}"]`+(si==null?':not([data-sub])':`[data-sub="${si}"]`)); }
+function cellMon(ti,si){ return document.querySelector(`td[data-montot-task="${ti}"]`+(si==null?':not([data-msub])':`[data-msub="${si}"]`)); }
 
 // ---- selectors ----
 function fillSelectors(){
@@ -168,22 +174,27 @@ function render(){
   });
   h1+=`</tr></thead>`;
 
-  // body task rows
-  let body='<tbody>';
-  tasks.forEach((tk,ti)=>{
-    const en=TASK_EN[ti];
-    body+=`<tr><td class="stickcol">${ti+1}. ${tk}<div style="font-size:10px;color:var(--muted);font-weight:400">${en}</div></td>`;
+  // body task rows — each task: a parent row, then one editable row per subtask
+  function entryRowHtml(ti, si, label, en, rowcls){
+    let r=`<tr class="${rowcls}"><td class="stickcol">${label}${en?`<div style="font-size:10px;color:var(--muted);font-weight:400">${en}</div>`:''}</td>`;
+    const sub = si==null?'':` data-sub="${si}"`;
     weeks.forEach(w=>{
       w.days.forEach(d=>{
         const cls=(d.dow===0||d.dow===6)?'daycell weekend':'daycell';
-        const v=hv(ti,d.dom); const val=v==null?'':v;
-        body+=`<td class="${cls}"><input data-task="${ti}" data-dom="${d.dom}" value="${val}" inputmode="decimal"></td>`;
+        const v=hv(ti,d.dom,si); const val=v==null?'':v;
+        r+=`<td class="${cls}"><input data-task="${ti}"${sub} data-dom="${d.dom}" value="${val}" inputmode="decimal"></td>`;
       });
-      body+=`<td class="wktot" data-wktot="${w.wi}" data-task="${ti}">0</td>`;
+      r+=`<td class="wktot" data-wktot="${w.wi}" data-task="${ti}"${sub}>0</td>`;
     });
-    body+=`<td class="montot" data-montot-task="${ti}">0</td>`;
+    r+=`<td class="montot" data-montot-task="${ti}"${si==null?'':` data-msub="${si}"`}>0</td></tr>`;
+    return r;
+  }
+  let body='<tbody>';
+  tasks.forEach((tk,ti)=>{
+    const subs=subsOf(ti);
+    body+=entryRowHtml(ti, null, `${ti+1}. ${tk}`, TASK_EN[ti], 'taskrow'+(subs.length?' grouprow':''));
+    subs.forEach((s,si)=>{ body+=entryRowHtml(ti, si, `${ti+1}.${si+1} ${s.zh}`, s.en, 'subrow'); });
   });
-  body+='</tr>';
 
   // worker daily total row (sum across tasks)
   body+=`<tr class="totrow"><td class="stickcol">Daily Total (all tasks)</td>`;
@@ -207,27 +218,35 @@ function render(){
   tbl.innerHTML=h1+body;
 
   tbl.querySelectorAll('input[data-task]').forEach(inp=>{
-    inp.addEventListener('input',()=>{ setHv(+inp.dataset.task, +inp.dataset.dom, inp.value.trim()); recalc(weeks); saveStore(); });
+    inp.addEventListener('input',()=>{ const sub=inp.dataset.sub==null?null:+inp.dataset.sub; setHv(+inp.dataset.task, +inp.dataset.dom, inp.value.trim(), sub); recalc(weeks); saveStore(); });
   });
   buildLeave();
   recalc(weeks);
 }
 
 function recalc(weeks){
-  const tasks=DATA.tasks;
-  const dayTot={}; const weekTot={}; let grand=0;
+  const dayTot={}, weekTot={}; let grand=0;
   weeks.forEach(w=>{ weekTot[w.wi]=0; w.days.forEach(d=>dayTot[d.dom]=0); });
+  // per-task rollup (parent-direct + subtasks) for the parent rows
+  const taskWeek={}, taskMonth={};
+  DATA.tasks.forEach((tk,ti)=>{ taskWeek[ti]={}; taskMonth[ti]=0; weeks.forEach(w=>taskWeek[ti][w.wi]=0); });
 
-  tasks.forEach((tk,ti)=>{
-    let monTask=0;
+  // pass 1: every entry row (parent-direct + each subtask) — sum its own hours, fill sub cells
+  entryRows().forEach(({ti,si})=>{
+    let mon=0;
     weeks.forEach(w=>{
       let wt=0;
-      w.days.forEach(d=>{ const v=num(hv(ti,d.dom)); wt+=v; dayTot[d.dom]+=v; });
-      const cell=document.querySelector(`[data-wktot="${w.wi}"][data-task="${ti}"]`);
-      if(cell)cell.textContent=fmt(wt);
-      weekTot[w.wi]+=wt; monTask+=wt;
+      w.days.forEach(d=>{ const v=num(hv(ti,d.dom,si)); wt+=v; dayTot[d.dom]+=v; });
+      weekTot[w.wi]+=wt; mon+=wt; taskWeek[ti][w.wi]+=wt;
+      if(si!=null){ const c=cellWk(ti,si,w.wi); if(c)c.textContent=fmt(wt); }
     });
-    const mc=document.querySelector(`[data-montot-task="${ti}"]`); if(mc)mc.textContent=fmt(monTask);
+    taskMonth[ti]+=mon;
+    if(si!=null){ const m=cellMon(ti,si); if(m)m.textContent=fmt(mon); }
+  });
+  // pass 2: parent rows show the rollup (direct + subtasks)
+  DATA.tasks.forEach((tk,ti)=>{
+    weeks.forEach(w=>{ const c=cellWk(ti,null,w.wi); if(c)c.textContent=fmt(taskWeek[ti][w.wi]); });
+    const m=cellMon(ti,null); if(m)m.textContent=fmt(taskMonth[ti]);
   });
   weeks.forEach(w=>{ w.days.forEach(d=>{ const c=document.querySelector(`[data-daytot="${d.dom}"]`); if(c)c.textContent=fmt(dayTot[d.dom]); });
     const wc=document.querySelector(`[data-weektot="${w.wi}"]`); if(wc)wc.textContent=fmt(weekTot[w.wi]); grand+=weekTot[w.wi]; });
@@ -244,7 +263,7 @@ function buildSummary(grand){
   const diff=fmt(grand-exp);
   const leaveSum=LEAVE_CATS.reduce((s,c)=>s+num(store.leave[c]),0);
   const otIdx=DATA.tasks.indexOf('加班');
-  let otSum=0; if(otIdx>=0){ weeks.forEach(wk=>wk.days.forEach(d=>otSum+=num(hv(otIdx,d.dom)))); }
+  let otSum=0; if(otIdx>=0){ [null,...subsOf(otIdx).map((_,si)=>si)].forEach(si=>weeks.forEach(wk=>wk.days.forEach(d=>otSum+=num(hv(otIdx,d.dom,si))))); }
   const s=document.getElementById('summary');
   s.innerHTML=`
    <div class="card"><div class="k">Worker</div><div class="v" style="font-size:18px">${w.name}</div><div class="sub">#${w.id} · ${w.role}</div></div>
@@ -264,7 +283,7 @@ function buildLeave(){
     inp.addEventListener('input',()=>{const v=inp.value.trim(); if(v==='')delete store.leave[inp.dataset.leave]; else store.leave[inp.dataset.leave]=v; saveStore(); buildSummary(currentGrand());});
   });
 }
-function currentGrand(){let g=0;const tasks=DATA.tasks;const weeks=buildWeeks(curMonth);tasks.forEach((t,ti)=>weeks.forEach(w=>w.days.forEach(d=>g+=num(hv(ti,d.dom)))));return g;}
+function currentGrand(){let g=0;const weeks=buildWeeks(curMonth);entryRows().forEach(({ti,si})=>weeks.forEach(w=>w.days.forEach(d=>g+=num(hv(ti,d.dom,si)))));return g;}
 
 // ---- export ----
 function exportCSV(){
@@ -274,14 +293,28 @@ function exportCSV(){
   rows.push([`Hour Report ${curYear}`, MONTHS[curMonth], `${w.id}. ${w.name} (${w.role})`]);
   let hdr=['Task']; weeks.forEach(wk=>{wk.days.forEach(d=>hdr.push(`${d.dom}${DOW[d.dow]}`)); hdr.push(`W${wk.wi} Tol`);}); hdr.push('Month Total');
   rows.push(hdr);
+  // one CSV row per entry row (parent label, then its subtasks indented)
+  function csvRow(label, ti, si){
+    let r=[label]; let mon=0;
+    weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{const v=num(hv(ti,d.dom,si));r.push(v);wt+=v;});r.push(wt);mon+=wt;});
+    r.push(mon); return r;
+  }
   tasks.forEach((tk,ti)=>{
-    let r=[`${ti+1}. ${tk}`]; let mon=0;
-    weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{const v=num(hv(ti,d.dom));r.push(v);wt+=v;});r.push(wt);mon+=wt;});
-    r.push(mon); rows.push(r);
+    const subs=subsOf(ti);
+    if(subs.length){
+      // parent rollup (direct + subs) for the labelled task row
+      let r=[`${ti+1}. ${tk}`]; let mon=0;
+      weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{let s=num(hv(ti,d.dom));subs.forEach((_,si)=>s+=num(hv(ti,d.dom,si)));r.push(s);wt+=s;});r.push(wt);mon+=wt;});
+      r.push(mon); rows.push(r);
+      rows.push(csvRow(`   ${ti+1}.0 ${tk} (direct)`, ti, null));
+      subs.forEach((s,si)=>rows.push(csvRow(`   ${ti+1}.${si+1} ${s.zh}`, ti, si)));
+    }else{
+      rows.push(csvRow(`${ti+1}. ${tk}`, ti, null));
+    }
   });
-  // daily totals
+  // daily totals (sum every entry once)
   let dr=['Daily Total']; let grand=0;
-  weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{let s=0;tasks.forEach((t,ti)=>s+=num(hv(ti,d.dom)));dr.push(s);wt+=s;});dr.push(wt);grand+=wt;});
+  weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{let s=0;entryRows().forEach(({ti,si})=>s+=num(hv(ti,d.dom,si)));dr.push(s);wt+=s;});dr.push(wt);grand+=wt;});
   dr.push(grand); rows.push(dr);
   rows.push([]);
   rows.push(['Leave/Overtime accumulators']);
@@ -333,6 +366,17 @@ document.getElementById('addTaskBtn').onclick=()=>{
   if(!zh.trim()){alert('Task name is required.');return;}
   const en=prompt('English description (optional):','')||'';
   if(addTask(zh,en)){ persistStructure(); render(); }
+};
+document.getElementById('addSubtaskBtn').onclick=()=>{
+  const list=DATA.tasks.map((t,i)=>`${i+1}. ${t} — ${TASK_EN[i]}`).join('\n');
+  const inp=prompt(`Add a subtask under which task? Enter its number:\n\n${list}`); if(inp===null)return;
+  const ti=parseInt(inp,10)-1;
+  if(isNaN(ti)||ti<0||ti>=DATA.tasks.length){alert('Invalid task number.');return;}
+  const next=subsOf(ti).length+1;
+  const zh=prompt(`New subtask under ${ti+1}. ${DATA.tasks[ti]} (will be ${ti+1}.${next})\n\nSubtask name (Chinese label):`); if(zh===null)return;
+  if(!zh.trim()){alert('Subtask name is required.');return;}
+  const en=prompt('English description (optional):','')||'';
+  if(addSubtask(ti,zh,en)){ persistStructure(); render(); }
 };
 document.getElementById('addTeamBtn').onclick=()=>{
   const group=prompt('Group (e.g. ENG):','ENG'); if(group===null)return;
@@ -401,6 +445,24 @@ document.getElementById('delTaskBtn').onclick=()=>{
   removeTask(idx);
   remapLocalForTaskDelete(idx);
   remapCloudForTaskDelete(db, idx, null);
+  persistStructure(); loadStore(); render();
+};
+document.getElementById('delSubtaskBtn').onclick=()=>{
+  const withSubs=DATA.tasks.map((t,i)=>({i,t,n:subsOf(i).length})).filter(x=>x.n>0);
+  if(!withSubs.length){alert('No task has subtasks yet.');return;}
+  const tlist=withSubs.map(x=>`${x.i+1}. ${x.t} (${x.n} subtask${x.n>1?'s':''})`).join('\n');
+  const tinp=prompt(`Delete a subtask from which task? Enter the task number:\n\n${tlist}`); if(tinp===null)return;
+  const ti=parseInt(tinp,10)-1;
+  const subs=subsOf(ti);
+  if(isNaN(ti)||ti<0||ti>=DATA.tasks.length||!subs.length){alert('That task has no subtasks.');return;}
+  const slist=subs.map((s,si)=>`${ti+1}.${si+1} ${s.zh}`).join('\n');
+  const sinp=prompt(`Delete which subtask of ${ti+1}. ${DATA.tasks[ti]}? Enter the subtask number (1–${subs.length}):\n\n${slist}`); if(sinp===null)return;
+  const si=parseInt(sinp,10)-1;
+  if(isNaN(si)||si<0||si>=subs.length){alert('Invalid subtask number.');return;}
+  if(!confirm(`Delete subtask "${ti+1}.${si+1} ${subs[si].zh}" everywhere?\n\nAll hours logged against it (every worker, every month, every year, every device) will be permanently removed, and later subtasks of this task renumber.`))return;
+  removeSubtask(ti,si);
+  remapLocalForSubtaskDelete(ti,si);
+  remapCloudForSubtaskDelete(db, ti, si, null);
   persistStructure(); loadStore(); render();
 };
 

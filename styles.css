@@ -55,6 +55,10 @@ tr.totrow td{background:var(--total);font-weight:700;height:46px;font-size:16px}
 tr.totrow .stickcol{background:#eef2f7}
 tr.exprow td{background:#fff;color:var(--muted);font-style:italic;height:40px;font-size:14px}
 tr.exprow .stickcol{background:#fbfbfd}
+/* subtask rows on the Hour Entry grid */
+tr.grouprow .stickcol{background:#eef2f7;font-weight:800}
+tr.subrow .stickcol{padding-left:30px;font-weight:500;color:#475569}
+tr.subrow td.daycell input{color:#0e7490}
 .dom{font-size:18px;font-weight:700} .dow{font-size:12px;color:var(--muted)}
 .sat .dow,.sun .dow{color:#9ca3af}
 .leave{margin-top:18px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;
@@ -82,6 +86,11 @@ h2.sec{font-size:15px;margin:24px 2px 8px;color:#374151;font-weight:800}
 h2.sec:first-of-type{margin-top:6px}
 table.report td.z{color:#cbd5e1}
 table.report td.tot,table.report th.tot{font-weight:800;background:#f1f5f9;border-left:2px solid var(--line)}
+/* subtask rows in Team Breakdown 'by task' table + subtotal (parent-task) columns in the matrix */
+table.report tr.subrow td{font-size:13px}
+table.report tr.subrow td.subcell{padding-left:30px;color:#475569}
+table.report tr.grouprow td{font-weight:800}
+table.report td.tcol,table.report th.tcol{background:#f1f5f9;font-weight:700;border-left:2px solid var(--line)}
 table.report tr.totals td{background:var(--grand);font-weight:800}
 table.report th.rot{font-weight:700;text-align:center;min-width:34px}
 .sharecell{display:flex;align-items:center;gap:8px;min-width:170px}

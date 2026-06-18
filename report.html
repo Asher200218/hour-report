@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hour Report — Task Totals</title>
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 <header>
@@ -34,6 +34,7 @@
     <select id="chartDim">
       <option value="worker">Hours by worker</option>
       <option value="team">Hours by team</option>
+      <option value="subtask">Hours by subtask</option>
     </select>
     <span class="mhint">Charts use the task &amp; month selected above.</span>
   </div>
@@ -41,6 +42,11 @@
     <canvas id="chartCanvas"></canvas>
     <div id="chartEmpty" class="chartempty" hidden>No hours logged for this selection yet.</div>
   </div>
+  <div id="subbreakSection" hidden>
+    <h2 class="sec">Subtask breakdown — each subtask against the task total</h2>
+    <div class="tablewrap"><table class="report" id="subbreak"></table></div>
+  </div>
+  <h2 class="sec" id="byWorkerHead" hidden>Hours by worker</h2>
   <div class="tablewrap"><table class="report" id="report"></table></div>
   <p class="hint">Totals sum every worker's hours logged against the selected task. Pick a single month or
   <b>All months</b>. Cross-device totals require cloud sync to be enabled; otherwise this shows only the data
@@ -50,7 +56,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="data.js?v=8"></script>
+<script src="data.js?v=9"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of (t.workers||[]))if(w.id===id)return {w,team:t};return null;}
@@ -99,19 +105,31 @@ function setSrc(state){
   const [t,c]=m[state]||m.loading; b.textContent=t; b.style.background=c;
 }
 
+// full task total (parent-direct + every subtask of taskIdx)
 function sumTask(record, taskIdx){
   if(!record||!record.h)return 0;
-  let s=0; const pre=`${taskIdx}_`;
-  for(const k in record.h){ if(k.startsWith(pre)) s+=num(record.h[k]); }
+  let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx) s+=num(record.h[k]); }
   return s;
 }
-// returns total hours for a worker on taskIdx within scope (month index or 'all')
-function workerTotal(wid, taskIdx, scope){
-  let s=0;
-  const months = scope==='all' ? Object.keys(dataset) : [scope];
-  months.forEach(m=>{ const rec=dataset[m] && dataset[m][wid]; if(rec) s+=sumTask(rec, taskIdx); });
+function sumSubtask(record, taskIdx, subIdx){
+  if(!record||!record.h)return 0;
+  let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx&&p.si===subIdx) s+=num(record.h[k]); }
   return s;
 }
+function sumTaskDirect(record, taskIdx){
+  if(!record||!record.h)return 0;
+  let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx&&p.si==null) s+=num(record.h[k]); }
+  return s;
+}
+// sum fn(record) for a worker across the scope (month index or 'all')
+function workerScopeSum(wid, scope, fn){
+  let s=0; const months = scope==='all' ? Object.keys(dataset) : [scope];
+  months.forEach(m=>{ const rec=dataset[m] && dataset[m][wid]; if(rec) s+=fn(rec); });
+  return s;
+}
+function workerTotal(wid, taskIdx, scope){ return workerScopeSum(wid, scope, r=>sumTask(r, taskIdx)); }
+// sum fn(record) across every known worker in the scope
+function totalAcrossWorkers(scope, fn){ let s=0; DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>s+=workerScopeSum(w.id, scope, fn))); return s; }
 function fmt(n){return Number.isInteger(n)?String(n):n.toFixed(1);}
 
 // Rebuild the task list after the structure (tasks) may have changed, keeping selection.
@@ -177,7 +195,26 @@ function render(){
   });
   html+=`<tr class="grand"><td></td><td colspan="2">All teams — total</td><td class="num">${fmt(grand)}</td><td></td></tr></tbody>`;
   document.getElementById('report').innerHTML=html;
+  buildSubBreakdown(taskIdx, scopeKey, grand);
   renderChart();
+}
+
+// Subtask breakdown table: each subtask's hours (all workers, current scope) vs the task total.
+function buildSubBreakdown(taskIdx, scopeKey, grand){
+  const subs=subsOf(taskIdx);
+  const section=document.getElementById('subbreakSection');
+  document.getElementById('byWorkerHead').hidden = !subs.length;
+  if(!subs.length){ section.hidden=true; return; }
+  const denom=Math.max(1,grand);
+  const share=v=>{ const pct=Math.round(v/denom*100); return `<div class="sharecell"><div class="barwrap"><i style="width:${pct}%"></i></div><span class="pct">${pct}%</span></div>`; };
+  let h=`<thead><tr><th>#</th><th>Subtask</th><th class="num">Hours</th><th>Share of task</th></tr></thead><tbody>`;
+  subs.forEach((s,si)=>{ const v=totalAcrossWorkers(scopeKey, r=>sumSubtask(r,taskIdx,si));
+    h+=`<tr class="${v>0?'':'zero'}"><td>${taskIdx+1}.${si+1}</td><td>${s.zh} <span style="color:var(--muted)">— ${s.en}</span></td><td class="num">${fmt(v)}</td><td>${share(v)}</td></tr>`; });
+  const direct=totalAcrossWorkers(scopeKey, r=>sumTaskDirect(r,taskIdx));
+  h+=`<tr class="${direct>0?'':'zero'}"><td>${taskIdx+1}.0</td><td>Direct (no subtask)</td><td class="num">${fmt(direct)}</td><td>${share(direct)}</td></tr>`;
+  h+=`<tr class="grand"><td></td><td>Task total</td><td class="num">${fmt(grand)}</td><td></td></tr></tbody>`;
+  document.getElementById('subbreak').innerHTML=h;
+  section.hidden=false;
 }
 
 // ---- chart tool ----
@@ -194,6 +231,9 @@ function renderChart(){
   let labels=[],vals=[];
   if(dim==='team'){
     DATA.teams.forEach(t=>{ const v=(t.workers||[]).reduce((a,w)=>a+workerTotal(w.id,taskIdx,scopeKey),0); if(v>0){labels.push(t.team);vals.push(v);} });
+  }else if(dim==='subtask'){
+    subsOf(taskIdx).forEach((s,si)=>{ const v=totalAcrossWorkers(scopeKey, r=>sumSubtask(r,taskIdx,si)); if(v>0){labels.push(`${taskIdx+1}.${si+1} ${s.zh}`);vals.push(v);} });
+    const dv=totalAcrossWorkers(scopeKey, r=>sumTaskDirect(r,taskIdx)); if(dv>0){labels.push('Direct');vals.push(dv);}
   }else{
     const arr=[]; DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{const v=workerTotal(w.id,taskIdx,scopeKey); if(v>0)arr.push([w.name,v]);}));
     arr.sort((a,b)=>b[1]-a[1]); labels=arr.map(x=>x[0]); vals=arr.map(x=>x[1]);
