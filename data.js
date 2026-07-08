@@ -237,8 +237,10 @@ function xlsxDownload(filename, sheets){
 }
 // Long-format analysis rows: one row per worker × month × (sub)task with hours > 0.
 // `dataset` is the report pages' dataset[month][workerId] = {h,leave}.
+// Column order is a stable contract consumed by the parts-analysis importer — append,
+// don't reorder. 'Month #' (1-12) is the machine-readable month; 'Month' is for humans.
 function buildLongRows(dataset, teams){
-  const rows=[['Year','Month','Group','Team','Worker #','Worker','Role','Task #','Task','Subtask #','Subtask','Hours']];
+  const rows=[['Year','Month','Month #','Group','Team','Worker #','Worker','Role','Task #','Task','Subtask #','Subtask','Hours']];
   teams.forEach(t=>(t.workers||[]).forEach(w=>{
     for(let m=0;m<12;m++){
       const rec=dataset[m]&&dataset[m][w.id]; if(!rec||!rec.h) continue;
@@ -248,7 +250,7 @@ function buildLongRows(dataset, teams){
         const v=agg[kk]; if(!v) return;
         const parts=kk.split('-'); const ti=+parts[0]; const si=parts.length>1?+parts[1]:null;
         const sub = si==null?null:subsOf(ti)[si];
-        rows.push([curYear, MONTHS[m], t.group, t.team, w.id, w.name, w.role,
+        rows.push([curYear, MONTHS[m], m+1, t.group, t.team, w.id, w.name, w.role,
                    ti+1, DATA.tasks[ti]||`Task ${ti+1}`, sub?`${ti+1}.${si+1}`:'', sub?sub.zh:'', v]);
       });
     }
@@ -257,11 +259,11 @@ function buildLongRows(dataset, teams){
 }
 // Leave accumulators, one row per worker × month × category with a value.
 function buildLeaveRows(dataset, teams){
-  const rows=[['Year','Month','Group','Team','Worker #','Worker','Category','Value']];
+  const rows=[['Year','Month','Month #','Group','Team','Worker #','Worker','Category','Value']];
   teams.forEach(t=>(t.workers||[]).forEach(w=>{
     for(let m=0;m<12;m++){
       const rec=dataset[m]&&dataset[m][w.id]; if(!rec||!rec.leave) continue;
-      LEAVE_CATS.forEach(c=>{ const v=parseFloat(leaveVal(rec.leave,c)); if(v) rows.push([curYear, MONTHS[m], t.group, t.team, w.id, w.name, c, v]); });
+      LEAVE_CATS.forEach(c=>{ const v=parseFloat(leaveVal(rec.leave,c)); if(v) rows.push([curYear, MONTHS[m], m+1, t.group, t.team, w.id, w.name, c, v]); });
     }
   }));
   return rows;
