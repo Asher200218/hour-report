@@ -211,6 +211,50 @@ function migrateLocalKeys(){
 }
 migrateLocalKeys();
 
+// ---- Excel export (SheetJS; pages include the CDN script) ----
+// sheets = [{name, rows (array of arrays), widths (chars per column)}]
+function xlsxDownload(filename, sheets){
+  if(!window.XLSX){ alert('Excel library failed to load — check the internet connection and retry.'); return; }
+  const wb=XLSX.utils.book_new();
+  sheets.forEach(s=>{
+    const ws=XLSX.utils.aoa_to_sheet(s.rows);
+    if(s.widths) ws['!cols']=s.widths.map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0,31));
+  });
+  XLSX.writeFile(wb, filename);
+}
+// Long-format analysis rows: one row per worker × month × (sub)task with hours > 0.
+// `dataset` is the report pages' dataset[month][workerId] = {h,leave}.
+function buildLongRows(dataset, teams){
+  const rows=[['Year','Month','Group','Team','Worker #','Worker','Role','Task #','Task','Subtask #','Subtask','Hours']];
+  teams.forEach(t=>(t.workers||[]).forEach(w=>{
+    for(let m=0;m<12;m++){
+      const rec=dataset[m]&&dataset[m][w.id]; if(!rec||!rec.h) continue;
+      const agg={};
+      for(const k in rec.h){ const p=parseKey(k); if(!p)continue; const kk=p.si==null?`${p.ti}`:`${p.ti}-${p.si}`; agg[kk]=(agg[kk]||0)+(parseFloat(rec.h[k])||0); }
+      Object.keys(agg).sort().forEach(kk=>{
+        const v=agg[kk]; if(!v) return;
+        const parts=kk.split('-'); const ti=+parts[0]; const si=parts.length>1?+parts[1]:null;
+        const sub = si==null?null:subsOf(ti)[si];
+        rows.push([curYear, MONTHS[m], t.group, t.team, w.id, w.name, w.role,
+                   ti+1, DATA.tasks[ti]||`Task ${ti+1}`, sub?`${ti+1}.${si+1}`:'', sub?sub.zh:'', v]);
+      });
+    }
+  }));
+  return rows;
+}
+// Leave accumulators, one row per worker × month × category with a value.
+function buildLeaveRows(dataset, teams){
+  const rows=[['Year','Month','Group','Team','Worker #','Worker','Category','Value']];
+  teams.forEach(t=>(t.workers||[]).forEach(w=>{
+    for(let m=0;m<12;m++){
+      const rec=dataset[m]&&dataset[m][w.id]; if(!rec||!rec.leave) continue;
+      LEAVE_CATS.forEach(c=>{ const v=parseFloat(rec.leave[c]); if(v) rows.push([curYear, MONTHS[m], t.group, t.team, w.id, w.name, c, v]); });
+    }
+  }));
+  return rows;
+}
+
 // ---- Print auto-fit ----
 // The hour grid is far wider than a printed page, and the on-screen scroll container
 // would clip it. Just for printing, scale each table down to the printable width of

@@ -17,6 +17,7 @@
     <div class="field"><label>Month</label><select id="monthSel"></select></div>
     <button class="ghost" id="refreshBtn">Refresh</button>
     <button class="ghost" id="exportBtn">Export CSV</button>
+    <button class="ghost" id="exportXlsxBtn">Export Excel</button>
     <button class="ghost" id="printBtn">Print</button>
   </div>
 </header>
@@ -58,7 +59,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="data.js?v=10"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="data.js?v=11"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 
@@ -115,6 +117,11 @@ function sumTask(record, taskIdx){
 function sumSubtask(record, taskIdx, subIdx){
   if(!record||!record.h)return 0;
   let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx&&p.si===subIdx) s+=num(record.h[k]); }
+  return s;
+}
+function sumTaskDirect(record, taskIdx){
+  if(!record||!record.h)return 0;
+  let s=0; for(const k in record.h){ const p=parseKey(k); if(p&&p.ti===taskIdx&&p.si==null) s+=num(record.h[k]); }
   return s;
 }
 // sum fn(record) for a worker across the scope (month index or 'all')
@@ -309,7 +316,42 @@ function exportCSV(){
   a.download=`TeamBreakdown_${curYear}_${team.team}_${scopeLabel}.csv`; a.click();
 }
 
+// ---- Excel export: selected team (or all) — by-task × month, member matrix, long data, leave ----
+function exportXLSX(){
+  const {team, scope, cols, colTotals, grand, rows}=compute();
+  const scopeLabel=scope==='all'?'All months':MONTHS[+scope];
+  const months=[...Array(12).keys()];
+  function teamMonth(m, fn){ let s=0; (team.workers||[]).forEach(w=>{ const rec=dataset[m]&&dataset[m][w.id]; if(rec)s+=fn(rec); }); return s; }
+  // Sheet 1: by task across the year (incl. subtask + direct rows)
+  const bt=[[`Working time by task — ${team.group} / ${team.team} — ${curYear}`, cloud?'all devices':'this device only'],[],['#','Task','English',...MONTHS,'Total']];
+  function line(no, zh, en, fn){ const r=[no,zh,en]; let tot=0; months.forEach(m=>{const v=teamMonth(m,fn); r.push(v||0); tot+=v;}); r.push(tot); return r; }
+  DATA.tasks.forEach((tk,ti)=>{
+    bt.push(line(`${ti+1}`, tk, TASK_EN[ti], r=>sumTask(r,ti)));
+    const subs=subsOf(ti);
+    if(subs.length){
+      subs.forEach((s,si)=>bt.push(line(`${ti+1}.${si+1}`, '  '+s.zh, s.en, r=>sumSubtask(r,ti,si))));
+      bt.push(line(`${ti+1}.0`, '  Direct (no subtask)', '', r=>sumTaskDirect(r,ti)));
+    }
+  });
+  // Sheet 2: member matrix for the selected scope (mirrors the on-screen table)
+  const mm=[[`Member contributions — ${team.group} / ${team.team} — ${scopeLabel} ${curYear}`],[],
+            ['#','Member','Role',...cols.map(c=>`${c.label}. ${c.name}`),'Total','Share %']];
+  rows.forEach(({w,cells,tot})=>{ mm.push([w.id,w.name,w.role,...cells.map(v=>v||0),tot, grand>0?Math.round(tot/grand*100):0]); });
+  mm.push(['','Team total','',...colTotals.map(v=>v||0),grand,'']);
+  // Sheets 3–4: long data + leave, filtered to the selected team(s)
+  const sel=document.getElementById('teamSel').value;
+  const teamsForLong = sel==='all' ? DATA.teams : [DATA.teams[+sel]];
+  const safeName=team.team.replace(/[\\/:*?"<>|]/g,'-');
+  xlsxDownload(`TeamBreakdown_${curYear}_${safeName}.xlsx`, [
+    {name:'By task', rows:bt, widths:[6,26,24,...MONTHS.map(()=>9),10]},
+    {name:'Member matrix', rows:mm, widths:[5,14,16,...cols.map(()=>12),10,9]},
+    {name:'Data (long)', rows:buildLongRows(dataset, teamsForLong), widths:[6,10,8,12,8,12,12,7,24,10,24,7]},
+    {name:'Leave', rows:buildLeaveRows(dataset, teamsForLong), widths:[6,10,8,12,8,12,36,8]}
+  ]);
+}
+
 buildSelectors();
+document.getElementById('exportXlsxBtn').onclick=exportXLSX;
 document.getElementById('chartType').onchange=renderChart;
 document.getElementById('chartDim').onchange=renderChart;
 document.getElementById('refreshBtn').onclick=loadData;

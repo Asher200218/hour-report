@@ -20,6 +20,7 @@
     <button class="ghost" id="loadJsonBtn">Load data</button>
     <input type="file" id="loadJsonInput" accept="application/json,.json" hidden>
     <button class="ghost" id="exportBtn">Export CSV</button>
+    <button class="ghost" id="exportXlsxBtn">Export Excel</button>
     <button class="ghost" id="printBtn">Print</button>
     <span class="saved" id="savedMsg">Saved ✓</span>
   </div>
@@ -48,7 +49,8 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="data.js?v=10"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="data.js?v=11"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -327,6 +329,50 @@ function exportCSV(){
   a.download=`HourReport_${curYear}_${MONTHS[curMonth]}_${w.name}.csv`; a.click();
 }
 
+// ---- Excel export: current worker & month (grid + pivot-ready long sheet + leave) ----
+function exportXLSX(){
+  const w=curWorker(); if(!w){alert('No worker selected.');return;}
+  const weeks=buildWeeks(curMonth);
+  // Sheet 1: the grid as shown (parent rollup, direct + subtask rows)
+  const rows=[[`Hour Report ${curYear}`, MONTHS[curMonth], `${w.id}. ${w.name} (${w.role})`]];
+  let hdr=['Task']; weeks.forEach(wk=>{wk.days.forEach(d=>hdr.push(`${d.dom} ${DOW[d.dow]}`)); hdr.push(`W${wk.wi} Tol`);}); hdr.push('Month Total');
+  rows.push(hdr);
+  function line(label, ti, si){ let r=[label]; let mon=0; weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{const v=num(hv(ti,d.dom,si));r.push(v||'');wt+=v;});r.push(wt);mon+=wt;}); r.push(mon); return r; }
+  DATA.tasks.forEach((tk,ti)=>{
+    const subs=subsOf(ti);
+    if(subs.length){
+      let r=[`${ti+1}. ${tk}`]; let mon=0;
+      weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{let s=num(hv(ti,d.dom));subs.forEach((_,si)=>s+=num(hv(ti,d.dom,si)));r.push(s||'');wt+=s;});r.push(wt);mon+=wt;});
+      r.push(mon); rows.push(r);
+      rows.push(line(`  ${ti+1}.0 ${tk} (direct)`, ti, null));
+      subs.forEach((s,si)=>rows.push(line(`  ${ti+1}.${si+1} ${s.zh}`, ti, si)));
+    } else rows.push(line(`${ti+1}. ${tk}`, ti, null));
+  });
+  let dr=['Daily Total']; let grand=0;
+  weeks.forEach(wk=>{let wt=0;wk.days.forEach(d=>{let s=0;entryRows().forEach(({ti,si})=>s+=num(hv(ti,d.dom,si)));dr.push(s||'');wt+=s;});dr.push(wt);grand+=wt;});
+  dr.push(grand); rows.push(dr);
+  let er=['Expected (wd×8)']; let expG=0;
+  weeks.forEach(wk=>{const e=wk.days.filter(d=>d.dow>=1&&d.dow<=5).length*8; expG+=e; wk.days.forEach(()=>er.push('')); er.push(e);});
+  er.push(expG); rows.push(er);
+  // Sheet 2: long format, one row per day × (sub)task with hours
+  const long=[['Date','Weekday','Task #','Task','Subtask #','Subtask','Hours']];
+  entryRows().forEach(({ti,si})=>{
+    weeks.forEach(wk=>wk.days.forEach(d=>{
+      const v=num(hv(ti,d.dom,si)); if(!v)return;
+      const date=`${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d.dom).padStart(2,'0')}`;
+      const sub=si==null?null:subsOf(ti)[si];
+      long.push([date, DOW[d.dow], ti+1, DATA.tasks[ti], sub?`${ti+1}.${si+1}`:'', sub?sub.zh:'', v]);
+    }));
+  });
+  // Sheet 3: leave accumulators
+  const lv=[['Category','Value']]; LEAVE_CATS.forEach(c=>lv.push([c, num(store.leave[c])]));
+  xlsxDownload(`HourReport_${curYear}_${MONTHS[curMonth]}_${w.name}.xlsx`, [
+    {name:'Grid', rows, widths:[34].concat(hdr.slice(1).map(()=>7))},
+    {name:'Data (long)', rows:long, widths:[12,9,7,24,10,24,7]},
+    {name:'Leave', rows:lv, widths:[36,8]}
+  ]);
+}
+
 // ---- local JSON backup (all workers, all months) ----
 function saveJSON(){
   const data={};
@@ -358,6 +404,7 @@ document.getElementById('saveJsonBtn').onclick=saveJSON;
 document.getElementById('loadJsonBtn').onclick=()=>document.getElementById('loadJsonInput').click();
 document.getElementById('loadJsonInput').onchange=e=>{if(e.target.files[0])loadJSON(e.target.files[0]);e.target.value='';};
 document.getElementById('exportBtn').onclick=exportCSV;
+document.getElementById('exportXlsxBtn').onclick=exportXLSX;
 document.getElementById('printBtn').onclick=()=>window.print();
 
 // ---- list management (add worker / team / task) ----
