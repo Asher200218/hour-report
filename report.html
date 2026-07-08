@@ -18,6 +18,7 @@
     <button class="ghost" id="refreshBtn">Refresh</button>
     <button class="ghost" id="exportBtn">Export CSV</button>
     <button class="ghost" id="exportXlsxBtn">Export Excel</button>
+    <button class="ghost" id="exportPeriodBtn">Export period</button>
     <button class="ghost" id="printBtn">Print</button>
   </div>
 </header>
@@ -58,7 +59,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="data.js?v=13"></script>
+<script src="data.js?v=14"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of (t.workers||[]))if(w.id===id)return {w,team:t};return null;}
@@ -302,7 +303,75 @@ function exportXLSX(){
   ]);
 }
 
+// ---- Excel export: ALL workers' hours over a chosen period (can span years) ----
+// Produces the same 'Data (long)' / 'Leave' contract sheets the parts-analysis app
+// imports, plus a per-worker × task summary for the period.
+function parseYM(s){ const m=String(s||'').trim().match(/^(\d{4})-(\d{1,2})$/); if(!m)return null; const y=+m[1], mo=+m[2]; if(mo<1||mo>12||y<2000||y>2100)return null; return {y, m:mo-1}; }
+function ymLabel(p){ return `${p.y}-${String(p.m+1).padStart(2,'0')}`; }
+function exportPeriodXLSX(){
+  const now=new Date();
+  const defEndM = curYear===now.getFullYear() ? now.getMonth() : 11;
+  const s=prompt("Export ALL workers' hours — period START (YYYY-MM):", `${curYear}-01`); if(s===null)return;
+  const e=prompt('Period END (YYYY-MM, inclusive):', `${curYear}-${String(defEndM+1).padStart(2,'0')}`); if(e===null)return;
+  let ps=parseYM(s), pe=parseYM(e);
+  if(!ps||!pe){alert('Please use YYYY-MM, e.g. 2026-03.');return;}
+  if(ps.y*12+ps.m > pe.y*12+pe.m){ const t=ps; ps=pe; pe=t; }
+  const inRange=(y,m)=>{ const v=y*12+m; return v>=ps.y*12+ps.m && v<=pe.y*12+pe.m; };
+
+  const finish=(byYear, src)=>{
+    const years=Object.keys(byYear).map(Number).sort((a,b)=>a-b);
+    let long=null, leave=null;
+    years.forEach(y=>{
+      const L=buildLongRows(byYear[y], DATA.teams, y), V=buildLeaveRows(byYear[y], DATA.teams, y);
+      if(!long){ long=L; leave=V; } else { long.push(...L.slice(1)); leave.push(...V.slice(1)); }
+    });
+    if(!long){ long=buildLongRows({}, DATA.teams); leave=buildLeaveRows({}, DATA.teams); }
+    // per-worker × task summary aggregated from the long rows
+    const taskCols=new Map(), agg=new Map();
+    long.slice(1).forEach(r=>{
+      const wid=r[5], tno=r[8], tname=r[9], h=r[12];
+      const key=String(tno); if(!taskCols.has(key)) taskCols.set(key, `${tno}. ${tname}`);
+      const a=agg.get(wid)||{per:{},tot:0};
+      a.per[key]=(a.per[key]||0)+h; a.tot+=h; agg.set(wid,a);
+    });
+    const colKeys=[...taskCols.keys()].sort((a,b)=>+a-+b);
+    const label=`${ymLabel(ps)} → ${ymLabel(pe)}`;
+    const bw=[[`Working hours by worker — ${label}`, src],[],['Group','Team','#','Worker','Role',...colKeys.map(k=>taskCols.get(k)),'Total']];
+    DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{
+      const a=agg.get(w.id);
+      bw.push([t.group,t.team,w.id,w.name,w.role,...colKeys.map(k=>(a&&a.per[k])||0), a?a.tot:0]);
+    }));
+    xlsxDownload(`HourReport_Hours_${ymLabel(ps)}_to_${ymLabel(pe)}.xlsx`, [
+      {name:'By worker', rows:bw, widths:[8,12,5,14,14,...colKeys.map(()=>12),10]},
+      {name:'Data (long)', rows:long, widths:[6,10,7,8,12,8,12,12,7,24,10,24,7]},
+      {name:'Leave', rows:leave, widths:[6,10,7,8,12,8,12,36,8]}
+    ]);
+  };
+
+  // fetch every year in range from the cloud when available; fall back to this browser
+  if(fbReady() && firebase.apps.length){
+    firebase.database().ref('reports').once('value').then(snap=>{
+      const all=snap.val()||{}; const byYear={};
+      Object.keys(all).forEach(y=>{ const months=all[y]||{};
+        Object.keys(months).forEach(m=>{ if(!inRange(+y,+m))return; const wk=months[m]||{};
+          const yd=(byYear[+y]=byYear[+y]||{}); const md=(yd[+m]={});
+          Object.keys(wk).forEach(wid=>{ const r=wk[wid]||{}; md[+wid]={h:r.h||{},leave:r.leave||{}}; });
+        });
+      });
+      finish(byYear,'all devices');
+    }).catch(e=>{console.warn(e); alert('Could not read cloud data — check the connection and retry.');});
+  } else {
+    const byYear={};
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); const mm=k&&k.match(/^hr_(\d{4})_(\d+)_(\d+)$/); if(!mm)continue;
+      const y=+mm[1], m=+mm[2], wid=+mm[3]; if(!inRange(y,m))continue;
+      try{ const v=JSON.parse(localStorage.getItem(k)); ((byYear[y]=byYear[y]||{})[m]=byYear[y][m]||{})[wid]={h:v.h||{},leave:v.leave||{}}; }catch(err){}
+    }
+    finish(byYear,'this device only');
+  }
+}
+
 buildSelectors();
+document.getElementById('exportPeriodBtn').onclick=exportPeriodXLSX;
 document.getElementById('exportXlsxBtn').onclick=exportXLSX;
 document.getElementById('chartType').onchange=renderChart;
 document.getElementById('chartDim').onchange=renderChart;
