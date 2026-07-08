@@ -25,6 +25,16 @@ function normalizeHourKeys(h){
   for(const k in h){ const p=parseKey(k); const nk=p?makeKey(p.ti,p.si,p.dom):k; if(nk!==k)changed=true; out[nk]=h[k]; }
   return changed?out:h;
 }
+// Leave values are keyed by category name, but Firebase forbids ./#$[] in keys —
+// "Maternity/paternity/parental leave" broke the whole record's sync. Store under a
+// sanitized key; read falls back to the legacy raw name for old local data.
+function leaveKey(c){ return String(c).replace(/[.#$\/\[\]]/g,'_'); }
+function leaveVal(l, c){ if(!l) return undefined; const v=l[leaveKey(c)]; return v!=null ? v : l[c]; }
+function normalizeLeaveKeys(l){
+  let changed=false; const out={};
+  for(const k in l){ const nk=leaveKey(k); if(nk!==k)changed=true; out[nk]=l[k]; }
+  return changed?out:l;
+}
 const LEAVE_CATS = ["Annual leave","Sick leave","Maternity/paternity/parental leave","Comp off"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
@@ -199,13 +209,15 @@ function watchStructure(db, onChange){
 // Apply any structure already saved on this device, before the pages render.
 loadStructureLocal();
 
-// One-time migration: rewrite any legacy '.'-form subtask keys saved on this device to the
-// Firebase-safe '-' form, so they sync and display consistently.
+// One-time migration: rewrite any legacy keys saved on this device to the Firebase-safe
+// forms ('.' subtask keys -> '-', raw leave-category names -> sanitized), so records sync.
 function migrateLocalKeys(){
   for(let i=0;i<localStorage.length;i++){
     const key=localStorage.key(i); if(!key||!/^hr_\d{4}_\d+_\d+$/.test(key)) continue;
-    try{ const v=JSON.parse(localStorage.getItem(key)||'{}');
-      if(v&&v.h){ const nh=normalizeHourKeys(v.h); if(nh!==v.h){ v.h=nh; localStorage.setItem(key, JSON.stringify(v)); } }
+    try{ const v=JSON.parse(localStorage.getItem(key)||'{}'); let dirty=false;
+      if(v&&v.h){ const nh=normalizeHourKeys(v.h); if(nh!==v.h){ v.h=nh; dirty=true; } }
+      if(v&&v.leave){ const nl=normalizeLeaveKeys(v.leave); if(nl!==v.leave){ v.leave=nl; dirty=true; } }
+      if(dirty) localStorage.setItem(key, JSON.stringify(v));
     }catch(e){}
   }
 }
@@ -249,7 +261,7 @@ function buildLeaveRows(dataset, teams){
   teams.forEach(t=>(t.workers||[]).forEach(w=>{
     for(let m=0;m<12;m++){
       const rec=dataset[m]&&dataset[m][w.id]; if(!rec||!rec.leave) continue;
-      LEAVE_CATS.forEach(c=>{ const v=parseFloat(rec.leave[c]); if(v) rows.push([curYear, MONTHS[m], t.group, t.team, w.id, w.name, c, v]); });
+      LEAVE_CATS.forEach(c=>{ const v=parseFloat(leaveVal(rec.leave,c)); if(v) rows.push([curYear, MONTHS[m], t.group, t.team, w.id, w.name, c, v]); });
     }
   }));
   return rows;
