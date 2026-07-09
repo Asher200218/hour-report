@@ -229,6 +229,7 @@ function render(){
   });
   buildLeave();
   recalc(weeks);
+  annualLeaveRefresh();
 }
 
 function recalc(weeks){
@@ -262,6 +263,30 @@ function recalc(weeks){
 }
 function fmt(n){return Number.isInteger(n)?n:(Math.round(n*100)/100);}
 
+// ---- 15-day annual leave allowance (per worker, per year) ----
+const ANNUAL_LEAVE_DAYS=15;
+// Year-to-date usage needs the worker's OTHER months too; fetch them once per
+// worker/month/year view (cloud when available, else this browser) and cache.
+let alCache={key:'', other:0, loaded:false};
+function annualLeaveRefresh(){
+  const key=`${curYear}_${curMonth}_${curWorkerId}`;
+  if(alCache.key===key && alCache.loaded) return;
+  alCache={key, other:0, loaded:false};
+  const localOther=()=>{
+    let sum=0; for(let m=0;m<12;m++){ if(m===curMonth)continue;
+      try{ const v=JSON.parse(localStorage.getItem(`hr_${curYear}_${m}_${curWorkerId}`)||'{}'); if(v.leave) sum+=num(leaveVal(v.leave,'Annual leave')); }catch(e){} }
+    return sum;
+  };
+  const apply=o=>{ if(alCache.key!==key)return; alCache.other=o; alCache.loaded=true; buildSummary(currentGrand()); };
+  if(db){
+    db.ref(`reports/${curYear}`).once('value').then(s=>{
+      const val=s.val()||{}; let sum=0;
+      Object.keys(val).forEach(m=>{ if(+m===curMonth)return; const r=val[m]&&val[m][curWorkerId]; if(r&&r.leave) sum+=num(leaveVal(r.leave,'Annual leave')); });
+      apply(sum);
+    }).catch(()=>apply(localOther()));
+  } else apply(localOther());
+}
+
 function buildSummary(grand){
   const w=curWorker();
   if(!w){ document.getElementById('summary').innerHTML=`<div class="card"><div class="k">Worker</div><div class="v" style="font-size:18px">—</div><div class="sub">no workers — add one above</div></div>`; return; }
@@ -279,13 +304,23 @@ function buildSummary(grand){
    <div class="card"><div class="k">Expected</div><div class="v">${exp}</div><div class="sub">weekdays × 8</div></div>
    <div class="card"><div class="k">Difference</div><div class="v ${diff<0?'warn':'ok'}">${diff>0?'+':''}${diff}</div><div class="sub">logged − expected</div></div>
    <div class="card"><div class="k">Leave total</div><div class="v">${fmt(leaveSum)}</div><div class="sub">from accumulators</div></div>
-   <div class="card"><div class="k">OT total</div><div class="v">${fmt(otSum)}</div><div class="sub">${otIdx>=0?`${otIdx+1}. 加班 (grid)`:'no 加班 task'}</div></div>`;
+   <div class="card"><div class="k">OT total</div><div class="v">${fmt(otSum)}</div><div class="sub">${otIdx>=0?`${otIdx+1}. 加班 (grid)`:'no 加班 task'}</div></div>
+   ${alCard()}`;
+}
+// Annual-leave card: whole-year usage (cached other months + this month's live value).
+function alCard(){
+  const cur=num(leaveVal(store.leave,'Annual leave'));
+  if(!alCache.loaded) return `<div class="card"><div class="k">Annual leave (year)</div><div class="v">…</div><div class="sub">of ${ANNUAL_LEAVE_DAYS} days</div></div>`;
+  const used=alCache.other+cur, left=ANNUAL_LEAVE_DAYS-used;
+  return `<div class="card"><div class="k">Annual leave (year)</div>`+
+    `<div class="v ${left<0?'warn':'ok'}">${fmt(used)} / ${ANNUAL_LEAVE_DAYS}</div>`+
+    `<div class="sub">${left>=0?`${fmt(left)} days left`:`${fmt(-left)} days OVER`}</div></div>`;
 }
 
 function buildLeave(){
   const el=document.getElementById('leave');
-  el.innerHTML=`<h3>Leave accumulators (monthly)</h3>`+
-    LEAVE_CATS.map(c=>`<div class="field"><label>${c}</label><input data-leave="${leaveKey(c)}" value="${leaveVal(store.leave,c)??''}" inputmode="decimal"></div>`).join('');
+  el.innerHTML=`<h3>Leave accumulators (monthly, in days)</h3>`+
+    LEAVE_CATS.map(c=>`<div class="field"><label>${c==='Annual leave'?`Annual leave (${ANNUAL_LEAVE_DAYS}/yr)`:c}</label><input data-leave="${leaveKey(c)}" value="${leaveVal(store.leave,c)??''}" inputmode="decimal"></div>`).join('');
   el.querySelectorAll('input[data-leave]').forEach(inp=>{
     inp.addEventListener('input',()=>{const v=inp.value.trim(); if(v==='')delete store.leave[inp.dataset.leave]; else store.leave[inp.dataset.leave]=v; saveStore(); buildSummary(currentGrand());});
   });
