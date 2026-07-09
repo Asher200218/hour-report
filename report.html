@@ -59,7 +59,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="data.js?v=14"></script>
+<script src="data.js?v=15"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of (t.workers||[]))if(w.id===id)return {w,team:t};return null;}
@@ -273,34 +273,9 @@ function exportCSV(){
   a.download=`TaskTotals_${curYear}_${DATA.tasks[taskIdx]}_${scopeLabel}.csv`; a.click();
 }
 
-// ---- Excel export: full-year analysis workbook (all teams) ----
+// ---- Excel export: full-year analysis workbook (all teams; shared builder in data.js) ----
 function exportXLSX(){
-  const months=[...Array(12).keys()];
-  function allWorkersMonth(m, fn){ let s=0; DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{ const rec=dataset[m]&&dataset[m][w.id]; if(rec)s+=fn(rec); })); return s; }
-  // Sheet 1: task totals by month (incl. subtask + direct rows)
-  const tt=[[`Task totals — all teams — ${curYear}`, cloud?'all devices':'this device only'],[],['#','Task','English',...MONTHS,'Total']];
-  function taskLine(no, zh, en, fn){ const r=[no,zh,en]; let tot=0; months.forEach(m=>{const v=allWorkersMonth(m,fn); r.push(v||0); tot+=v;}); r.push(tot); return r; }
-  DATA.tasks.forEach((tk,ti)=>{
-    tt.push(taskLine(`${ti+1}`, tk, TASK_EN[ti], r=>sumTask(r,ti)));
-    const subs=subsOf(ti);
-    if(subs.length){
-      subs.forEach((s,si)=>tt.push(taskLine(`${ti+1}.${si+1}`, '  '+s.zh, s.en, r=>sumSubtask(r,ti,si))));
-      tt.push(taskLine(`${ti+1}.0`, '  Direct (no subtask)', '', r=>sumTaskDirect(r,ti)));
-    }
-  });
-  // Sheet 2: workers × tasks, full year
-  const bw=[[`Hours by worker × task — ${curYear} (full year)`],[],['Group','Team','#','Worker','Role',...DATA.tasks.map((t,i)=>`${i+1}. ${t}`),'Total']];
-  DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{
-    const r=[t.group,t.team,w.id,w.name,w.role]; let tot=0;
-    DATA.tasks.forEach((_,ti)=>{const v=workerScopeSum(w.id,'all',rec=>sumTask(rec,ti)); r.push(v||0); tot+=v;});
-    r.push(tot); bw.push(r);
-  }));
-  xlsxDownload(`HourReport_${curYear}_Analysis.xlsx`, [
-    {name:'Task totals', rows:tt, widths:[6,26,24,...MONTHS.map(()=>9),10]},
-    {name:'By worker', rows:bw, widths:[8,12,5,14,14,...DATA.tasks.map(()=>12),10]},
-    {name:'Data (long)', rows:buildLongRows(dataset, DATA.teams), widths:[6,10,7,8,12,8,12,12,7,24,10,24,7]},
-    {name:'Leave', rows:buildLeaveRows(dataset, DATA.teams), widths:[6,10,7,8,12,8,12,36,8]}
-  ]);
+  xlsxDownload(`HourReport_${curYear}_Analysis.xlsx`, analysisSheets(dataset, cloud?'all devices':'this device only'));
 }
 
 // ---- Excel export: ALL workers' hours over a chosen period (can span years) ----

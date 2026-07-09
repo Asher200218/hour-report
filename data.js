@@ -235,6 +235,41 @@ function xlsxDownload(filename, sheets){
   });
   XLSX.writeFile(wb, filename);
 }
+// Record-level sums over the h key map (usable on any page).
+function recSumTask(rec,ti){ if(!rec||!rec.h)return 0; let s=0; for(const k in rec.h){ const p=parseKey(k); if(p&&p.ti===ti) s+=(parseFloat(rec.h[k])||0); } return s; }
+function recSumSubtask(rec,ti,si){ if(!rec||!rec.h)return 0; let s=0; for(const k in rec.h){ const p=parseKey(k); if(p&&p.ti===ti&&p.si===si) s+=(parseFloat(rec.h[k])||0); } return s; }
+function recSumTaskDirect(rec,ti){ if(!rec||!rec.h)return 0; let s=0; for(const k in rec.h){ const p=parseKey(k); if(p&&p.ti===ti&&p.si==null) s+=(parseFloat(rec.h[k])||0); } return s; }
+
+// The full-year analysis workbook (Task totals × month, worker × task, long data, leave)
+// built from a dataset[month][workerId]={h,leave} map. Shared by the Task Totals page's
+// Export Excel and the entry page's Export all (year).
+function analysisSheets(dataset, src){
+  const months=[...Array(12).keys()];
+  const monthTotal=(m,fn)=>{ let s=0; DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{ const rec=dataset[m]&&dataset[m][w.id]; if(rec)s+=fn(rec); })); return s; };
+  const tt=[[`Task totals — all teams — ${curYear}`, src],[],['#','Task','English',...MONTHS,'Total']];
+  const taskLine=(no,zh,en,fn)=>{ const r=[no,zh,en]; let tot=0; months.forEach(m=>{const v=monthTotal(m,fn); r.push(v||0); tot+=v;}); r.push(tot); return r; };
+  DATA.tasks.forEach((tk,ti)=>{
+    tt.push(taskLine(`${ti+1}`, tk, TASK_EN[ti], r=>recSumTask(r,ti)));
+    const subs=subsOf(ti);
+    if(subs.length){
+      subs.forEach((s,si)=>tt.push(taskLine(`${ti+1}.${si+1}`, '  '+s.zh, s.en, r=>recSumSubtask(r,ti,si))));
+      tt.push(taskLine(`${ti+1}.0`, '  Direct (no subtask)', '', r=>recSumTaskDirect(r,ti)));
+    }
+  });
+  const bw=[[`Hours by worker × task — ${curYear} (full year)`, src],[],['Group','Team','#','Worker','Role',...DATA.tasks.map((t,i)=>`${i+1}. ${t}`),'Total']];
+  DATA.teams.forEach(t=>(t.workers||[]).forEach(w=>{
+    const r=[t.group,t.team,w.id,w.name,w.role]; let tot=0;
+    DATA.tasks.forEach((_,ti)=>{ let v=0; months.forEach(m=>{ const rec=dataset[m]&&dataset[m][w.id]; if(rec)v+=recSumTask(rec,ti); }); r.push(v||0); tot+=v; });
+    r.push(tot); bw.push(r);
+  }));
+  return [
+    {name:'Task totals', rows:tt, widths:[6,26,24,...MONTHS.map(()=>9),10]},
+    {name:'By worker', rows:bw, widths:[8,12,5,14,14,...DATA.tasks.map(()=>12),10]},
+    {name:'Data (long)', rows:buildLongRows(dataset, DATA.teams), widths:[6,10,7,8,12,8,12,12,7,24,10,24,7]},
+    {name:'Leave', rows:buildLeaveRows(dataset, DATA.teams), widths:[6,10,7,8,12,8,12,36,8]}
+  ];
+}
+
 // Long-format analysis rows: one row per worker × month × (sub)task with hours > 0.
 // `dataset` is the report pages' dataset[month][workerId] = {h,leave}.
 // Column order is a stable contract consumed by the parts-analysis importer — append,

@@ -21,6 +21,7 @@
     <input type="file" id="loadJsonInput" accept="application/json,.json" hidden>
     <button class="ghost" id="exportBtn">Export CSV</button>
     <button class="ghost" id="exportXlsxBtn">Export Excel</button>
+    <button class="ghost" id="exportAllBtn">Export all (year)</button>
     <button class="ghost" id="printBtn">Print</button>
     <span class="saved" id="savedMsg">Saved ✓</span>
   </div>
@@ -52,7 +53,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="data.js?v=14"></script>
+<script src="data.js?v=15"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -375,6 +376,26 @@ function exportXLSX(){
   ]);
 }
 
+// ---- Excel export: ALL workers, whole current year (one click, no prompts) ----
+function exportAllXLSX(){
+  const done=(ds,src)=>xlsxDownload(`HourReport_${curYear}_Analysis.xlsx`, analysisSheets(ds, src));
+  if(db){
+    db.ref(`reports/${curYear}`).once('value').then(snap=>{
+      const val=snap.val()||{}; const ds={};
+      Object.keys(val).forEach(m=>{ const wk=val[m]||{};
+        Object.keys(wk).forEach(wid=>{ const r=wk[wid]||{}; (ds[+m]=ds[+m]||{})[+wid]={h:r.h||{},leave:r.leave||{}}; });
+      });
+      done(ds,'all devices');
+    }).catch(e=>{console.warn(e); alert('Could not read cloud data — check the connection and retry.');});
+  } else {
+    const ds={}; const re=new RegExp(`^hr_${curYear}_(\\d+)_(\\d+)$`);
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); const mm=k&&k.match(re); if(!mm)continue;
+      try{ const v=JSON.parse(localStorage.getItem(k)); (ds[+mm[1]]=ds[+mm[1]]||{})[+mm[2]]={h:v.h||{},leave:v.leave||{}}; }catch(e){}
+    }
+    done(ds,'this device only');
+  }
+}
+
 // ---- local JSON backup (all workers, all months) ----
 function saveJSON(){
   const data={};
@@ -407,6 +428,7 @@ document.getElementById('loadJsonBtn').onclick=()=>document.getElementById('load
 document.getElementById('loadJsonInput').onchange=e=>{if(e.target.files[0])loadJSON(e.target.files[0]);e.target.value='';};
 document.getElementById('exportBtn').onclick=exportCSV;
 document.getElementById('exportXlsxBtn').onclick=exportXLSX;
+document.getElementById('exportAllBtn').onclick=exportAllXLSX;
 document.getElementById('printBtn').onclick=()=>window.print();
 
 // ---- list management (add worker / team / task) ----
