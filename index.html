@@ -53,7 +53,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="data.js?v=15"></script>
+<script src="data.js?v=16"></script>
 <script>
 // ---- week model (Sun-Sat weeks, continuous week numbering across the year) ----
 function weekIndexOf(date){
@@ -594,12 +594,13 @@ function roleTaskWeights(role){
 }
 // One month of plausible hours for one worker: ~8h/workday over 1–3 tasks, subtasks
 // used ~half the time where they exist, occasional OT and weekend OT, occasional leave.
-function genRecord(worker, monthIdx){
+function genRecord(worker, monthIdx, year){
+  const Y=year||curYear;
   const h={}; const weights=roleTaskWeights(worker.role);
-  const days=new Date(curYear, monthIdx+1, 0).getDate();
+  const days=new Date(Y, monthIdx+1, 0).getDate();
   const otIdx=DATA.tasks.indexOf('加班');
   for(let d=1; d<=days; d++){
-    const dow=new Date(curYear, monthIdx, d).getDay();
+    const dow=new Date(Y, monthIdx, d).getDay();
     if(dow===0||dow===6){
       if(otIdx>=0 && Math.random()<0.08) h[makeKey(otIdx,null,d)]=String(rhalf(2,6));
       continue;
@@ -620,12 +621,14 @@ function genRecord(worker, monthIdx){
   if(Math.random()<0.3) leave[leaveKey(pick(LEAVE_CATS))]=String(rhalf(0.5,3));
   return {h, leave};
 }
-function saveGenerated(records){ // records: [{m, wid, rec}]
-  records.forEach(({m,wid,rec})=>localStorage.setItem(`hr_${curYear}_${m}_${wid}`, JSON.stringify(rec)));
+function saveGenerated(records){ // records: [{y, m, wid, rec}] (y falls back to curYear)
+  const years=new Set();
+  records.forEach(r=>{ const y=r.y||curYear; years.add(y); localStorage.setItem(`hr_${y}_${r.m}_${r.wid}`, JSON.stringify(r.rec)); });
+  years.forEach(y=>rememberYear(y));
   if(db){
-    registerYearRemote(curYear);
+    years.forEach(y=>registerYearRemote(y));
     const updates={};
-    records.forEach(({m,wid,rec})=>updates[`reports/${curYear}/${m}/${wid}`]=rec);
+    records.forEach(r=>updates[`reports/${r.y||curYear}/${r.m}/${r.wid}`]=r.rec);
     try{ db.ref().update(updates).catch(e=>console.warn('test-data sync',e)); }catch(e){ console.warn('test-data sync',e); }
   }
 }
@@ -638,23 +641,36 @@ document.getElementById('genDataBtn').onclick=()=>{
 2 = team ${t?t.group+' / '+t.team:''}, ${MONTHS[curMonth]}
 3 = ALL workers, ${MONTHS[curMonth]}
 4 = ALL workers, full year ${curYear}
+5 = ALL workers, a period (YYYY-MM to YYYY-MM, may span years)
 
 Existing hours in the chosen scope are OVERWRITTEN.`,'1');
   if(choice===null)return;
   const c=parseInt(choice,10);
-  if(!(c>=1&&c<=4)){alert('Invalid choice.');return;}
-  let workers=[], months=[curMonth];
+  if(!(c>=1&&c<=5)){alert('Invalid choice.');return;}
+  // periods = list of {y, m} to generate
+  let periods=[{y:curYear, m:curMonth}];
+  if(c===4) periods=[...Array(12).keys()].map(m=>({y:curYear, m}));
+  else if(c===5){
+    const s=prompt('Period START (YYYY-MM):', `${curYear-3}-01`); if(s===null)return;
+    const e=prompt('Period END (YYYY-MM, inclusive):', `${curYear}-${String(curMonth+1).padStart(2,'0')}`); if(e===null)return;
+    let ps=parseYM(s), pe=parseYM(e);
+    if(!ps||!pe){alert('Please use YYYY-MM, e.g. 2023-06.');return;}
+    if(ps.y*12+ps.m > pe.y*12+pe.m){ const tmp=ps; ps=pe; pe=tmp; }
+    periods=[]; for(let v=ps.y*12+ps.m; v<=pe.y*12+pe.m; v++) periods.push({y:Math.floor(v/12), m:v%12});
+  }
+  let workers=[];
   if(c===1){ const w=curWorker(); if(!w){alert('No worker selected.');return;} workers=[w]; }
   else if(c===2){ if(!t||!(t.workers||[]).length){alert('No workers in this team.');return;} workers=t.workers; }
-  else { DATA.teams.forEach(tm=>(tm.workers||[]).forEach(w=>workers.push(w))); if(c===4) months=[...Array(12).keys()]; }
+  else DATA.teams.forEach(tm=>(tm.workers||[]).forEach(w=>workers.push(w)));
   if(!workers.length){alert('No workers in scope.');return;}
-  const n=workers.length*months.length;
-  if(!confirm(`Generate random test hours for ${workers.length} worker(s) × ${months.length} month(s) = ${n} record(s)?\n\nThis OVERWRITES those records everywhere (this browser + cloud sync to every device). Use "Save data" first if you need a backup.`))return;
+  const n=workers.length*periods.length;
+  const label = periods.length>1 ? `${ymLabel(periods[0])} → ${ymLabel(periods[periods.length-1])}` : ymLabel(periods[0]);
+  if(!confirm(`Generate random test hours for ${workers.length} worker(s) × ${periods.length} month(s) (${label}) = ${n} record(s)?\n\nThis OVERWRITES those records everywhere (this browser + cloud sync to every device). Use "Save data" first if you need a backup.`))return;
   const records=[];
-  months.forEach(m=>workers.forEach(w=>records.push({m, wid:w.id, rec:genRecord(w,m)})));
+  periods.forEach(({y,m})=>workers.forEach(w=>records.push({y, m, wid:w.id, rec:genRecord(w,m,y)})));
   saveGenerated(records);
   loadStore(); render();
-  alert(`Generated ${n} test record(s).`);
+  alert(`Generated ${n} test record(s) (${label}).`);
 };
 
 // ---- clear logged data (hours + leave; structure/teams/tasks are kept) ----

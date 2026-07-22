@@ -59,7 +59,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="data.js?v=15"></script>
+<script src="data.js?v=16"></script>
 <script>
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n;}
 function workerById(id){for(const t of DATA.teams)for(const w of (t.workers||[]))if(w.id===id)return {w,team:t};return null;}
@@ -281,8 +281,6 @@ function exportXLSX(){
 // ---- Excel export: ALL workers' hours over a chosen period (can span years) ----
 // Produces the same 'Data (long)' / 'Leave' contract sheets the parts-analysis app
 // imports, plus a per-worker × task summary for the period.
-function parseYM(s){ const m=String(s||'').trim().match(/^(\d{4})-(\d{1,2})$/); if(!m)return null; const y=+m[1], mo=+m[2]; if(mo<1||mo>12||y<2000||y>2100)return null; return {y, m:mo-1}; }
-function ymLabel(p){ return `${p.y}-${String(p.m+1).padStart(2,'0')}`; }
 function exportPeriodXLSX(){
   const now=new Date();
   const defEndM = curYear===now.getFullYear() ? now.getMonth() : 11;

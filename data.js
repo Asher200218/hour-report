@@ -235,6 +235,10 @@ function xlsxDownload(filename, sheets){
   });
   XLSX.writeFile(wb, filename);
 }
+// Parse a 'YYYY-MM' string -> {y, m} (m is 0-based) or null.
+function parseYM(s){ const m=String(s||'').trim().match(/^(\d{4})-(\d{1,2})$/); if(!m)return null; const y=+m[1], mo=+m[2]; if(mo<1||mo>12||y<2000||y>2100)return null; return {y, m:mo-1}; }
+function ymLabel(p){ return `${p.y}-${String(p.m+1).padStart(2,'0')}`; }
+
 // Record-level sums over the h key map (usable on any page).
 function recSumTask(rec,ti){ if(!rec||!rec.h)return 0; let s=0; for(const k in rec.h){ const p=parseKey(k); if(p&&p.ti===ti) s+=(parseFloat(rec.h[k])||0); } return s; }
 function recSumSubtask(rec,ti,si){ if(!rec||!rec.h)return 0; let s=0; for(const k in rec.h){ const p=parseKey(k); if(p&&p.ti===ti&&p.si===si) s+=(parseFloat(rec.h[k])||0); } return s; }
